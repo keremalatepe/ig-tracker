@@ -52,51 +52,24 @@ log = logging.getLogger("ig_fetcher")
 
 # ─── Token Yönetimi ───────────────────────────────────────
 class TokenManager:
-    """Access token'ı yönetir: uzun süreli token'a çevirir ve yeniler."""
+    """Access token'ı yönetir. Developer portalından alınan token zaten uzun sürelidir (60 gün)."""
 
     def __init__(self, app_id: str, app_secret: str, initial_token: str):
         self.app_id = app_id
         self.app_secret = app_secret
         self.token_file = Path(TOKEN_FILE)
-        self.is_github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
 
         if self.token_file.exists():
             data = json.loads(self.token_file.read_text())
             self.access_token = data["access_token"]
             self.expires_at = data.get("expires_at")
             log.info("Token dosyadan yüklendi.")
-        elif self.is_github_actions:
-            # GitHub Actions'da token zaten uzun süreli (setup_token.py ile dönüştürülmüş)
-            self.access_token = initial_token
-            self.expires_at = time.time() + (50 * 86400)  # tahmini
-            self._save()
-            log.info("GitHub Actions: Token secret'tan alındı.")
         else:
+            # Portaldan alınan token zaten uzun süreli (60 gün)
             self.access_token = initial_token
-            self.expires_at = None
-            self._exchange_for_long_lived()
-
-    def _exchange_for_long_lived(self):
-        """Kısa süreli token'ı uzun süreli (60 gün) token'a çevirir."""
-        log.info("Token uzun süreli token'a çevriliyor...")
-        resp = requests.get(
-            f"{GRAPH_API_BASE}/access_token",
-            params={
-                "grant_type": "ig_exchange_token",
-                "client_secret": self.app_secret,
-                "access_token": self.access_token,
-            }
-        )
-        data = resp.json()
-        if "access_token" in data:
-            self.access_token = data["access_token"]
-            expires_in = data.get("expires_in", 5184000)
-            self.expires_at = time.time() + expires_in
+            self.expires_at = time.time() + (55 * 86400)
             self._save()
-            log.info(f"Uzun süreli token alındı. {expires_in // 86400} gün geçerli.")
-        else:
-            log.error(f"Token exchange hatası: {data}")
-            raise Exception(f"Token exchange başarısız: {data}")
+            log.info("Token kaydedildi (60 gün geçerli).")
 
     def refresh_if_needed(self):
         """Token 50 günden eskiyse yeniler."""
