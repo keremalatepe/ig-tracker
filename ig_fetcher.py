@@ -142,11 +142,10 @@ def init_db():
         post_id TEXT NOT NULL,
         like_count INTEGER,
         comments_count INTEGER,
-        impressions INTEGER,
         reach INTEGER,
         saved INTEGER,
         shares INTEGER,
-        plays INTEGER,
+        views INTEGER,
         total_interactions INTEGER,
         FOREIGN KEY(post_id) REFERENCES posts(post_id)
     )
@@ -214,21 +213,19 @@ class InstagramFetcher:
 
     def fetch_media_insights(self, media_id: str, media_type: str, media_product_type: str) -> dict:
         """Tek bir medya için insights çeker."""
-        # Reels ve diğer medya tipleri farklı metrikler destekliyor
-        if media_product_type == "REELS":
-            metrics = "impressions,reach,saved,shares,plays,total_interactions,likes,comments"
-        elif media_type == "VIDEO":
-            metrics = "impressions,reach,saved,shares,plays,total_interactions,likes,comments"
-        elif media_type == "CAROUSEL_ALBUM":
-            metrics = "impressions,reach,saved,shares,total_interactions,likes,comments"
-        else:  # IMAGE
-            metrics = "impressions,reach,saved,shares,total_interactions,likes,comments"
+        # 2025 güncellemesi: impressions ve plays deprecated → views kullanılıyor
+        metrics = "reach,saved,shares,likes,comments,views,total_interactions"
 
         data = self._get(
             f"{GRAPH_API_BASE}/{media_id}/insights",
             {"metric": metrics}
         )
+
         result = {}
+        if "error" in data:
+            log.warning(f"  Insights alınamadı ({media_id}): {data['error'].get('message', '')}")
+            return result
+
         for item in data.get("data", []):
             name = item["name"]
             value = item["values"][0]["value"] if item.get("values") else 0
@@ -277,46 +274,48 @@ def run_fetch_cycle(fetcher: InstagramFetcher, conn: sqlite3.Connection):
         media_type = media.get("media_type", "")
         media_product_type = media.get("media_product_type", "")
 
-        # Post bilgilerini kaydet/güncelle
-        cur.execute("""
-        INSERT INTO posts (post_id, shortcode, media_type, media_product_type,
-                          permalink, caption, timestamp, thumbnail_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(post_id) DO UPDATE SET
-            media_type=excluded.media_type,
-            media_product_type=excluded.media_product_type,
-            permalink=excluded.permalink,
-            caption=excluded.caption
-        """, (
-            post_id,
-            media.get("permalink", "").split("/")[-2] if media.get("permalink") else None,
-            media_type,
-            media_product_type,
-            media.get("permalink"),
-            media.get("caption"),
-            media.get("timestamp"),
-            media.get("thumbnail_url"),
-        ))
+        try:
+            # Post bilgilerini kaydet/güncelle
+            cur.execute("""
+            INSERT INTO posts (post_id, shortcode, media_type, media_product_type,
+                              permalink, caption, timestamp, thumbnail_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(post_id) DO UPDATE SET
+                media_type=excluded.media_type,
+                media_product_type=excluded.media_product_type,
+                permalink=excluded.permalink,
+                caption=excluded.caption
+            """, (
+                post_id,
+                media.get("permalink", "").split("/")[-2] if media.get("permalink") else None,
+                media_type,
+                media_product_type,
+                media.get("permalink"),
+                media.get("caption"),
+                media.get("timestamp"),
+                media.get("thumbnail_url"),
+            ))
 
-        # Insights çek
-        insights = fetcher.fetch_media_insights(post_id, media_type, media_product_type)
+            # Insights çek
+            insights = fetcher.fetch_media_insights(post_id, media_type, media_product_type)
 
-        cur.execute("""
-        INSERT INTO post_snapshots (fetched_at, post_id, like_count, comments_count,
-                                    impressions, reach, saved, shares, plays, total_interactions)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            fetched_at,
-            post_id,
-            insights.get("likes", 0),
-            insights.get("comments", 0),
-            insights.get("impressions"),
-            insights.get("reach"),
-            insights.get("saved"),
-            insights.get("shares"),
-            insights.get("plays"),
-            insights.get("total_interactions"),
-        ))
+            cur.execute("""
+            INSERT INTO post_snapshots (fetched_at, post_id, like_count, comments_count,
+                                        reach, saved, shares, views, total_interactions)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                fetched_at,
+                post_id,
+                insights.get("likes", 0),
+                insights.get("comments", 0),
+                insights.get("reach"),
+                insights.get("saved"),
+                insights.get("shares"),
+                insights.get("views"),
+                insights.get("total_interactions"),
+            ))
+        except Exception as e:
+            log.warning(f"  Post atlandı ({post_id}): {e}")
 
         if i % 25 == 0:
             log.info(f"  İlerleme: {i}/{len(all_media)} | API istekleri: {fetcher.request_count}")
