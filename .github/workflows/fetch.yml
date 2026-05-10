@@ -1,38 +1,49 @@
 name: Instagram Data Fetcher
-
+ 
 on:
   schedule:
     # Her saat başı çalışır (UTC)
     - cron: '0 * * * *'
   workflow_dispatch: # Manuel tetikleme butonu
-
+ 
+permissions:
+  contents: write
+ 
 jobs:
   fetch:
     runs-on: ubuntu-latest
-
+ 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
-
+ 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
+ 
       - name: Install dependencies
         run: pip install requests
-
+ 
+      # token.json'ı cache'den al (repo'ya commit etmiyoruz, public repo güvenliği)
+      - name: Restore token cache
+        uses: actions/cache@v4
+        with:
+          path: token.json
+          key: ig-token-${{ github.run_id }}
+          restore-keys: ig-token-
+ 
       - name: Run fetcher
         env:
           IG_APP_ID: ${{ secrets.IG_APP_ID }}
           IG_APP_SECRET: ${{ secrets.IG_APP_SECRET }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
         run: python ig_fetcher.py
-
+ 
       - name: Commit data to repo
         run: |
           git config user.name "ig-bot"
           git config user.email "bot@noreply.github.com"
-          git add instagram_data.db token.json
+          git add instagram_data.db
           git diff --staged --quiet || git commit -m "📊 Veri güncellendi: $(date -u '+%Y-%m-%d %H:%M UTC')"
           git push
