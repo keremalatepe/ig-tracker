@@ -58,12 +58,19 @@ class TokenManager:
         self.app_id = app_id
         self.app_secret = app_secret
         self.token_file = Path(TOKEN_FILE)
+        self.is_github_actions = os.environ.get("GITHUB_ACTIONS") == "true"
 
         if self.token_file.exists():
             data = json.loads(self.token_file.read_text())
             self.access_token = data["access_token"]
             self.expires_at = data.get("expires_at")
             log.info("Token dosyadan yüklendi.")
+        elif self.is_github_actions:
+            # GitHub Actions'da token zaten uzun süreli (setup_token.py ile dönüştürülmüş)
+            self.access_token = initial_token
+            self.expires_at = time.time() + (50 * 86400)  # tahmini
+            self._save()
+            log.info("GitHub Actions: Token secret'tan alındı.")
         else:
             self.access_token = initial_token
             self.expires_at = None
