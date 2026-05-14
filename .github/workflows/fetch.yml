@@ -3,7 +3,7 @@ name: Instagram Data Fetcher
 on:
   schedule:
     # Her saat başı çalışır (UTC)
-    - cron: '0 * * * *'
+    - cron: '17 * * * *'
   workflow_dispatch: # Manuel tetikleme butonu
 
 permissions:
