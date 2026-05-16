@@ -2,6 +2,7 @@ name: Instagram Data Fetcher
 
 on:
   schedule:
+<<<<<<< HEAD
     # Her saatin 17. dakikasında çalışır (queue daha az yoğun, geç başlama az olur)
     - cron: '17 * * * *'
   workflow_dispatch:
@@ -17,6 +18,11 @@ on:
           - daily
           - weekly
           - full
+=======
+    # Her saat başı çalışır (UTC)
+    - cron: '17 * * * *'
+  workflow_dispatch: # Manuel tetikleme butonu
+>>>>>>> cd20191d5800eaed980c59eb806dd21c54f95675
 
 permissions:
   contents: write
