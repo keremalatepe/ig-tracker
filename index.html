@@ -204,7 +204,9 @@ const DATA_URLS = (location.hostname === "localhost" || location.hostname === "1
   : [RAW_DATA_URL, "dashboard_data.json"];
 
 const fmt = new Intl.NumberFormat("tr-TR");
+const fmtCompact = new Intl.NumberFormat("tr-TR", { notation: "compact", maximumFractionDigits: 1 });
 const fmtNum = n => (n == null || isNaN(n)) ? "—" : fmt.format(Math.round(n));
+const fmtShort = n => (n == null || isNaN(n)) ? "—" : fmtCompact.format(Math.round(n));
 const fmtSec = ms => ms == null ? "—" : (ms / 1000).toFixed(1) + "s";
 const fmtDate = iso => {
   if (!iso) return "—";
@@ -218,6 +220,8 @@ const fmtDateTime = iso => {
 let DATA = null;
 let activeTab = "summary";
 let followerRange = 30;
+let viewsRange = 7;
+let viewsSource = "posts";
 let accountRange = 30;
 let postSort = "views";
 let chartsByTab = {};
@@ -372,10 +376,19 @@ function renderPane(tab) {
 
 function renderSummary() {
   const p = DATA.profile || {};
+  const dailyViewsBySource = DATA.daily_views_timeseries || {};
+  const viewsSourceLabel = viewsSource === "stories" ? "Story" : viewsSource === "all" ? "Hepsi" : "Post + Reels";
+  const dailyViews = [...(dailyViewsBySource[viewsSource] || [])]
+    .sort((a, b) => (a.d || "").localeCompare(b.d || ""));
   const topByViews = [...(DATA.posts || [])]
     .filter(x => x.latest && x.latest.views != null)
     .sort((a, b) => (b.latest.views || 0) - (a.latest.views || 0))
     .slice(0, 5);
+  const dailyViewsFiltered = dailyViews
+    .slice(Math.max(0, dailyViews.length - viewsRange))
+    .map(x => ({ ...x, _t: new Date(`${x.d}T00:00:00`) }));
+  const totalViewsInRange = dailyViewsFiltered.reduce((sum, row) => sum + (row.v || 0), 0);
+  const peakViewsDay = dailyViewsFiltered.reduce((best, row) => (row.v || 0) > (best.v || 0) ? row : best, dailyViewsFiltered[0] || { v: 0, d: null });
 
   document.getElementById("pane-summary").innerHTML = `
     <div class="card">
@@ -399,13 +412,35 @@ function renderSummary() {
       <div class="chart-wrap"><canvas id="chart-follower"></canvas></div>
     </div>
     <div class="card">
+      <h3>Günlük İzlenme</h3>
+      <div class="metric-toggle" style="margin-bottom:8px">
+        <button class="metric-btn ${viewsSource==='posts'?'active':''}" onclick="setViewsSource('posts')">Post + Reels</button>
+        <button class="metric-btn ${viewsSource==='stories'?'active':''}" onclick="setViewsSource('stories')">Story</button>
+        <button class="metric-btn ${viewsSource==='all'?'active':''}" onclick="setViewsSource('all')">Hepsi</button>
+      </div>
+      <div class="range-sel">
+        <button class="${viewsRange===3?'active':''}" onclick="setViewsRange(3)">3g</button>
+        <button class="${viewsRange===7?'active':''}" onclick="setViewsRange(7)">7g</button>
+        <button class="${viewsRange===14?'active':''}" onclick="setViewsRange(14)">14g</button>
+        <button class="${viewsRange===30?'active':''}" onclick="setViewsRange(30)">30g</button>
+      </div>
+      <div class="kpi-grid" style="margin-bottom:10px">
+        <div class="kpi"><div class="kpi-label">Son ${viewsRange} gün toplam</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div><div class="kpi-delta delta-flat">${viewsSourceLabel}</div></div>
+        <div class="kpi"><div class="kpi-label">Günlük zirve</div><div class="kpi-value">${fmtNum(peakViewsDay.v)}</div><div class="kpi-delta delta-flat">${peakViewsDay.d ? fmtDate(peakViewsDay.d) : "—"}</div></div>
+      </div>
+      ${dailyViewsFiltered.length ? '<div class="chart-wrap"><canvas id="chart-daily-views"></canvas></div>' : '<div class="empty">Henüz günlük izlenme verisi yok.</div>'}
+    </div>
+    <div class="card">
       <h3>En Çok İzlenen 5 İçerik</h3>
       <div class="post-list">${topByViews.length ? topByViews.map(renderPostItem).join("") : '<div class="empty">Henüz post verisi yok.</div>'}</div>
     </div>`;
   drawFollowerChart();
+  if (dailyViewsFiltered.length) drawDailyViewsChart(dailyViewsFiltered);
 }
 
 function setFollowerRange(d) { followerRange = d; renderSummary(); }
+function setViewsRange(d) { viewsRange = d; renderSummary(); }
+function setViewsSource(source) { viewsSource = source; renderSummary(); }
 
 function drawFollowerChart() {
   const series = DATA.follower_timeseries || [];
@@ -458,6 +493,60 @@ function drawFollowerChart() {
           ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } }
         },
         y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function drawDailyViewsChart(series) {
+  const ctx = document.getElementById("chart-daily-views");
+  if (!ctx) return;
+
+  chartsByTab.dailyViews = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: series.map(x => x.d),
+      datasets: [{
+        label: viewsSource === "stories" ? "Günlük story izlenme" : viewsSource === "all" ? "Günlük toplam izlenme" : "Günlük post izlenme",
+        data: series.map(x => x.v || 0),
+        backgroundColor: "#f97316",
+        borderRadius: 6,
+        maxBarThickness: 34,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const d = new Date(`${items[0].label}T00:00:00`);
+              return d.toLocaleDateString("tr-TR", { day:"2-digit", month:"short", year:"numeric" });
+            },
+            label: item => `İzlenme: ${fmtNum(item.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            maxRotation: 0,
+            maxTicksLimit: 8,
+            font: { size: 10 },
+            callback: (_, idx) => {
+              const d = new Date(`${series[idx].d}T00:00:00`);
+              return d.toLocaleDateString("tr-TR", { day:"2-digit", month:"short" });
+            }
+          }
+        },
+        y: {
+          ticks: {
+            font: { size: 10 },
+            callback: value => fmtShort(value)
+          }
+        }
       }
     }
   });

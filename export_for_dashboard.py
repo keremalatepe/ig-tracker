@@ -13,6 +13,11 @@ Format:
   "profile": { "username", "name", "followers_count", "follows_count",
                "media_count", "biography", "profile_picture_url" },
   "follower_timeseries": [{"t": "ISO", "v": N}, ...],   // backfill + mevcut saatlik snapshot'lar
+  "daily_views_timeseries": {
+      "posts": [{"d": "YYYY-MM-DD", "v": N}, ...],
+      "stories": [{"d": "YYYY-MM-DD", "v": N}, ...],
+      "all": [{"d": "YYYY-MM-DD", "v": N}, ...]
+  },
   "account_insights_timeseries": [
       {"d": "YYYY-MM-DD", "reach": N, "profile_views": N, ...}
   ],
@@ -53,6 +58,7 @@ OUTPUT_PATH = os.environ.get("DASHBOARD_JSON", "dashboard_data.json")
 POSTS_LIMIT = 500                 # Son N post
 POST_HISTORY_POINTS = 30          # Her post için en son N snapshot
 POST_VIEW_HISTORY_DAYS = 90       # Diff sayfası için kompakt izlenme geçmişi
+DAILY_VIEWS_LOOKBACK_DAYS = 90
 FOLLOWER_LOOKBACK_DAYS = 365      # Takipçi serisi için maksimum
 ACCOUNT_LOOKBACK_DAYS = 365
 CAPTION_MAX = 150
@@ -208,6 +214,77 @@ def get_account_insights_series(conn: sqlite3.Connection, days: int) -> list:
          "total_interactions": r[4], "follower_count": r[5], "website_clicks": r[6]}
         for r in rows
     ]
+
+
+def _daily_series_from_deltas(rows: list[tuple[str, str, int]]) -> list:
+    by_day = {}
+    prev_by_item = {}
+    for item_id, fetched_at, views in rows:
+        prev_views = prev_by_item.get(item_id)
+        prev_by_item[item_id] = views
+        if prev_views is None:
+            continue
+        delta = views - prev_views
+        if delta <= 0:
+            continue
+        day = fetched_at[:10]
+        by_day[day] = by_day.get(day, 0) + delta
+
+    if not by_day:
+        return []
+
+    start_day = min(by_day)
+    end_day = max(by_day)
+    current = datetime.fromisoformat(start_day).date()
+    end_date = datetime.fromisoformat(end_day).date()
+    out = []
+    while current <= end_date:
+        day = current.isoformat()
+        out.append({"d": day, "v": by_day.get(day, 0)})
+        current += timedelta(days=1)
+    return out
+
+
+def _merge_daily_series(*series_groups: list) -> list:
+    by_day = {}
+    for series in series_groups:
+        for row in series:
+            by_day[row["d"]] = by_day.get(row["d"], 0) + (row.get("v") or 0)
+    return [{"d": day, "v": by_day[day]} for day in sorted(by_day)]
+
+
+def get_daily_views_series(conn: sqlite3.Connection, days: int) -> dict:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days + 1)).isoformat()
+
+    post_rows = []
+    if safe(conn, "post_snapshots") and safe(conn, "posts"):
+        post_rows = conn.execute("""
+            SELECT s.post_id, s.fetched_at, s.views
+            FROM post_snapshots s
+            INNER JOIN posts p ON p.post_id = s.post_id
+            WHERE s.views IS NOT NULL
+              AND s.fetched_at >= ?
+              AND (p.media_type = 'VIDEO' OR p.media_product_type = 'REELS')
+            ORDER BY s.post_id, s.fetched_at
+        """, (cutoff,)).fetchall()
+
+    story_rows = []
+    if safe(conn, "story_snapshots"):
+        story_rows = conn.execute("""
+            SELECT story_id, fetched_at, views
+            FROM story_snapshots
+            WHERE views IS NOT NULL
+              AND fetched_at >= ?
+            ORDER BY story_id, fetched_at
+        """, (cutoff,)).fetchall()
+
+    posts_series = _daily_series_from_deltas(post_rows)
+    stories_series = _daily_series_from_deltas(story_rows)
+    return {
+        "posts": posts_series,
+        "stories": stories_series,
+        "all": _merge_daily_series(posts_series, stories_series),
+    }
 
 
 def get_online_followers(conn: sqlite3.Connection) -> list:
@@ -413,6 +490,7 @@ def build_payload() -> dict:
             "schema_version": 2,
             "profile": get_latest_profile(conn),
             "follower_timeseries": get_follower_timeseries(conn, days=FOLLOWER_LOOKBACK_DAYS),
+            "daily_views_timeseries": get_daily_views_series(conn, days=DAILY_VIEWS_LOOKBACK_DAYS),
             "follower_activity_timeseries": get_follower_activity_timeseries(conn, days=FOLLOWER_LOOKBACK_DAYS),
             "account_insights_timeseries": get_account_insights_series(conn, days=ACCOUNT_LOOKBACK_DAYS),
             "online_followers_heatmap": get_online_followers(conn),
