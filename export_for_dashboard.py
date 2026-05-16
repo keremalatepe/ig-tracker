@@ -12,7 +12,7 @@ Format:
   "generated_at": "ISO",
   "profile": { "username", "name", "followers_count", "follows_count",
                "media_count", "biography", "profile_picture_url" },
-  "follower_timeseries": [{"t": "ISO", "v": N}, ...],   // son 90 gün, günlük örneklendi
+  "follower_timeseries": [{"t": "ISO", "v": N}, ...],   // backfill + mevcut saatlik snapshot'lar
   "account_insights_timeseries": [
       {"d": "YYYY-MM-DD", "reach": N, "profile_views": N, ...}
   ],
@@ -91,7 +91,23 @@ def get_latest_profile(conn: sqlite3.Connection) -> dict:
 
 
 def follower_change(conn: sqlite3.Connection, days: int) -> int | None:
-    """Şu anki takipçi - N gün önceki takipçi."""
+    """Current followers minus the closest available count from N days ago."""
+    if safe(conn, "follower_daily"):
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+        row = conn.execute("""
+            SELECT
+              (SELECT followers_count
+               FROM follower_daily
+               WHERE followers_count IS NOT NULL
+               ORDER BY date DESC LIMIT 1)
+              -
+              (SELECT followers_count
+               FROM follower_daily
+               WHERE date <= ? AND followers_count IS NOT NULL
+               ORDER BY date DESC LIMIT 1)
+        """, (cutoff,)).fetchone()
+        return row[0] if row and row[0] is not None else None
+
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     row = conn.execute("""
         SELECT
@@ -104,8 +120,41 @@ def follower_change(conn: sqlite3.Connection, days: int) -> int | None:
 
 
 def get_follower_timeseries(conn: sqlite3.Connection, days: int) -> list:
-    """Günde 1 örnek (son snapshot/gün), son N gün."""
+    """Prepend daily backfill to the existing hourly follower snapshots."""
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    if safe(conn, "follower_daily"):
+        first_snapshot_day_row = conn.execute("""
+            SELECT MIN(date(fetched_at))
+            FROM profile_snapshots
+            WHERE fetched_at >= ? AND followers_count IS NOT NULL
+        """, (cutoff,)).fetchone()
+        first_snapshot_day = first_snapshot_day_row[0] if first_snapshot_day_row else None
+
+        daily_cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+        daily_params = [daily_cutoff]
+        daily_where = "date >= ? AND followers_count IS NOT NULL"
+        if first_snapshot_day:
+            daily_where += " AND date < ?"
+            daily_params.append(first_snapshot_day)
+
+        daily_rows = conn.execute(f"""
+            SELECT date, followers_count
+            FROM follower_daily
+            WHERE {daily_where}
+            ORDER BY date
+        """, daily_params).fetchall()
+
+        snapshot_rows = conn.execute("""
+            SELECT fetched_at, followers_count
+            FROM profile_snapshots
+            WHERE fetched_at >= ? AND followers_count IS NOT NULL
+            ORDER BY fetched_at
+        """, (cutoff,)).fetchall()
+
+        rows = [{"t": f"{r[0]}T00:00:00+00:00", "v": r[1]} for r in daily_rows]
+        rows.extend({"t": r[0], "v": r[1]} for r in snapshot_rows)
+        return rows
+
     rows = conn.execute("""
         SELECT date(fetched_at) AS d, MAX(fetched_at), followers_count
         FROM profile_snapshots
