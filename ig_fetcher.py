@@ -364,6 +364,61 @@ class InstagramFetcher:
                     result[end_time] = value_obj
         return result
 
+    # ── Follower history (backfill) ──
+    def fetch_follower_history(self, days: int = 90) -> list:
+        """Son `days` günlük günlük follower_count delta verisini çeker.
+        Her eleman: {"date": "YYYY-MM-DD", "delta": int}
+        """
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        until = datetime.now(timezone.utc)
+        data = self._get(
+            f"{GRAPH_API_BASE}/me/insights",
+            {
+                "metric": "follower_count",
+                "period": "day",
+                "since": int(since.timestamp()),
+                "until": int(until.timestamp()),
+            },
+        )
+        if "error" in data:
+            log.warning(f"  follower_count history alınamadı: {data['error'].get('message', '')}")
+            return []
+
+        results = []
+        seen_dates = set()
+        for item in data.get("data", []):
+            if item.get("name") != "follower_count":
+                continue
+            for v in item.get("values", []):
+                end_time = v.get("end_time", "")
+                date_str = end_time[:10] if end_time else None
+                value = v.get("value", 0)
+                if date_str and date_str not in seen_dates:
+                    results.append({"date": date_str, "delta": value})
+                    seen_dates.add(date_str)
+
+        # Sayfalama (insights endpoint'i nadiren sayfalıyor ama yine de handle et)
+        next_url = data.get("paging", {}).get("next")
+        while next_url:
+            page = self._get(next_url)
+            if "error" in page:
+                break
+            for item in page.get("data", []):
+                if item.get("name") != "follower_count":
+                    continue
+                for v in item.get("values", []):
+                    end_time = v.get("end_time", "")
+                    date_str = end_time[:10] if end_time else None
+                    value = v.get("value", 0)
+                    if date_str and date_str not in seen_dates:
+                        results.append({"date": date_str, "delta": value})
+                        seen_dates.add(date_str)
+            next_url = page.get("paging", {}).get("next")
+
+        results.sort(key=lambda x: x["date"])
+        log.info(f"  Follower history: {len(results)} gün alındı.")
+        return results
+
     # ── Demographics ──
     def fetch_demographics(self) -> dict:
         """Takipçi demografisi. Creator hesabında bazıları çalışmayabilir."""
@@ -564,6 +619,25 @@ def insert_demographics(conn: sqlite3.Connection, fetched_at: str, demographics:
             """, (fetched_at, breakdown, dimension, value))
 
 
+def upsert_follower_daily(conn: sqlite3.Connection, date: str, followers_count: int,
+                          followers_delta: int | None, source: str):
+    conn.execute("""
+    INSERT INTO follower_daily (date, followers_count, followers_delta, source)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(date) DO UPDATE SET
+        followers_count = CASE
+            WHEN excluded.source = 'snapshot' THEN excluded.followers_count
+            WHEN follower_daily.source = 'snapshot' THEN follower_daily.followers_count
+            ELSE excluded.followers_count
+        END,
+        followers_delta = COALESCE(excluded.followers_delta, follower_daily.followers_delta),
+        source = CASE
+            WHEN excluded.source = 'snapshot' OR follower_daily.source = 'snapshot' THEN 'snapshot'
+            ELSE excluded.source
+        END
+    """, (date, followers_count, followers_delta, source))
+
+
 def insert_online_followers(conn: sqlite3.Connection, fetched_at: str, online: dict):
     for end_time, hours_dict in online.items():
         period_date = end_time.split("T")[0] if end_time else fetched_at[:10]
@@ -601,6 +675,8 @@ def run_hourly(fetcher: InstagramFetcher, conn: sqlite3.Connection, fetched_at: 
     profile = fetcher.fetch_profile()
     if "error" not in profile:
         insert_profile(conn, fetched_at, profile)
+        today_str = fetched_at[:10]
+        upsert_follower_daily(conn, today_str, profile.get("followers_count"), None, "snapshot")
         log.info(f"  @{profile.get('username')} | Takipçi: {profile.get('followers_count')} | "
                  f"Post: {profile.get('media_count')}")
 
@@ -690,6 +766,82 @@ def run_account_insights(fetcher: InstagramFetcher, conn: sqlite3.Connection, fe
     set_cursor(conn, "last_account_insights_fetch", fetched_at)
 
 
+def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, days: int = 90):
+    """API'den days günlük follower delta çekip follower_daily tablosunu doldurur.
+
+    Mantık:
+    - profile_snapshots'taki mevcut günlük değerler her zaman önceliklidir (source='snapshot').
+    - Daha eski günler için: en eski snapshot'tan (10 Mayıs) geriye doğru delta ile hesaplanır.
+    - Ayrıca 10 Mayıs'tan bugüne kadar snapshot değerleri de follower_daily'ye aktarılır.
+    """
+    log.info(f"[backfill] {days} günlük follower history başlatılıyor...")
+
+    # 1. Mevcut snapshot'lardan günlük son değerleri al
+    cur = conn.execute("""
+        SELECT DATE(fetched_at) AS d, followers_count
+        FROM profile_snapshots
+        WHERE followers_count IS NOT NULL
+        ORDER BY fetched_at
+    """)
+    snapshots_by_day: dict[str, int] = {}
+    for row in cur.fetchall():
+        snapshots_by_day[row[0]] = row[1]  # aynı günden birden fazlaysa son kazanır
+
+    log.info(f"  {len(snapshots_by_day)} günlük snapshot bulundu: "
+             f"{min(snapshots_by_day) if snapshots_by_day else '-'} - "
+             f"{max(snapshots_by_day) if snapshots_by_day else '-'}")
+
+    # 2. API'den delta verisi çek
+    deltas_list = fetcher.fetch_follower_history(days)
+    if not deltas_list:
+        # API'den veri gelmedi; sadece snapshot'ları aktar
+        log.warning("[backfill] API'den delta alınamadı, yalnızca snapshot verisi kaydediliyor.")
+        for date_str, count in snapshots_by_day.items():
+            upsert_follower_daily(conn, date_str, count, None, "snapshot")
+        conn.commit()
+        return
+
+    delta_dict: dict[str, int] = {d["date"]: d["delta"] for d in deltas_list}
+    log.info(f"  API delta aralığı: {min(delta_dict)} - {max(delta_dict)}")
+
+    # 3. Referans noktası: en güncel snapshot (bugün veya dünün gerçek sayısı)
+    latest_snapshot_date = max(snapshots_by_day)
+    reference_count = snapshots_by_day[latest_snapshot_date]
+    log.info(f"  Referans: {latest_snapshot_date} = {reference_count} takipçi")
+
+    # 4. Referans gününden API'nin en eski gününe kadar geriye doğru mutlak sayıları hesapla
+    #    count[d-1] = count[d] - delta[d]
+    from datetime import date as date_cls
+    ref_date = date_cls.fromisoformat(latest_snapshot_date)
+    earliest = date_cls.fromisoformat(min(delta_dict))
+
+    reconstructed: dict[str, int] = {}
+    current_count = reference_count
+    current_date = ref_date
+
+    while current_date >= earliest:
+        date_str = str(current_date)
+        reconstructed[date_str] = current_count
+        delta = delta_dict.get(date_str, 0)
+        current_count -= delta
+        current_date -= timedelta(days=1)
+
+    # 5. DB'ye yaz — snapshot günleri öncelikli
+    saved_snap, saved_api = 0, 0
+    all_dates = set(reconstructed) | set(snapshots_by_day)
+    for date_str in sorted(all_dates):
+        delta = delta_dict.get(date_str)
+        if date_str in snapshots_by_day:
+            upsert_follower_daily(conn, date_str, snapshots_by_day[date_str], delta, "snapshot")
+            saved_snap += 1
+        elif date_str in reconstructed:
+            upsert_follower_daily(conn, date_str, reconstructed[date_str], delta, "api_backfill")
+            saved_api += 1
+
+    conn.commit()
+    log.info(f"[backfill] Tamamlandı: {saved_snap} snapshot + {saved_api} api_backfill günü kaydedildi.")
+
+
 def run_demographics(fetcher: InstagramFetcher, conn: sqlite3.Connection, fetched_at: str):
     log.info("[demographics] Audience demographics çekiliyor...")
     demo = fetcher.fetch_demographics()
@@ -730,6 +882,9 @@ def execute_mode(fetcher: InstagramFetcher, conn: sqlite3.Connection, mode: str)
         if mode == "full" or (mode == "auto" and should_run(conn, "last_demographics_fetch", WEEKLY_INTERVAL_DAYS * 24)) or mode == "weekly":
             run_demographics(fetcher, conn, fetched_at)
 
+        if mode == "backfill":
+            run_backfill_followers(fetcher, conn)
+
         status = "success"
     except Exception as e:
         error = str(e)
@@ -747,8 +902,8 @@ def execute_mode(fetcher: InstagramFetcher, conn: sqlite3.Connection, mode: str)
 def main():
     parser = argparse.ArgumentParser(description="Instagram Graph API Data Fetcher")
     parser.add_argument("--mode", default="auto",
-                        choices=["auto", "hourly", "daily", "weekly", "full"],
-                        help="Çalışma modu. auto = cursor'lara bakıp uygun olanı seç")
+                        choices=["auto", "hourly", "daily", "weekly", "full", "backfill"],
+                        help="Çalışma modu. backfill = 90 günlük follower geçmişini doldur")
     parser.add_argument("--loop", action="store_true", help="Sürekli çalış (saatte bir)")
     parser.add_argument("--interval", type=int, default=FETCH_INTERVAL_SECONDS,
                         help="Loop modunda çalışma aralığı (saniye)")

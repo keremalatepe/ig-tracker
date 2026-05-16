@@ -163,6 +163,17 @@ def migrate(conn: sqlite3.Connection):
     )
     """)
 
+    log.info("follower_daily tablosu...")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS follower_daily (
+        date TEXT PRIMARY KEY,
+        followers_count INTEGER,
+        followers_delta INTEGER,
+        source TEXT
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_follower_daily_date ON follower_daily(date)")
+
     conn.commit()
     log.info("Migration tamamlandı.")
 

@@ -17,6 +17,7 @@ on:
           - daily
           - weekly
           - full
+          - backfill
 
 permissions:
   contents: write
