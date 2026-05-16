@@ -419,6 +419,93 @@ class InstagramFetcher:
         log.info(f"  Follower history: {len(results)} gün alındı.")
         return results
 
+    def _merge_follow_unfollow_value(self, daily: dict, date_str: str | None, value):
+        if not date_str:
+            return
+        row = daily.setdefault(date_str, {"date": date_str, "follows": None, "unfollows": None})
+        if isinstance(value, (int, float)):
+            row["follows"] = int(value)
+            return
+        if not isinstance(value, dict):
+            return
+
+        direct_follow_keys = ("follows", "follow", "followers", "new_followers", "follower")
+        direct_unfollow_keys = ("unfollows", "unfollow", "unfollowers", "lost_followers", "nonfollower")
+        for key, raw in value.items():
+            key_norm = str(key).lower()
+            if not isinstance(raw, (int, float)):
+                continue
+            if any(part in key_norm for part in direct_unfollow_keys):
+                row["unfollows"] = int(raw)
+            elif any(part in key_norm for part in direct_follow_keys):
+                row["follows"] = int(raw)
+
+    def _merge_follow_unfollow_breakdowns(self, daily: dict, end_time: str | None, breakdowns: list):
+        date_str = end_time[:10] if end_time else None
+        if not date_str:
+            return
+        for breakdown in breakdowns or []:
+            for result in breakdown.get("results", []):
+                value = result.get("value")
+                labels = result.get("dimension_values") or []
+                label = " ".join(str(x).lower() for x in labels)
+                row = daily.setdefault(date_str, {"date": date_str, "follows": None, "unfollows": None})
+                if not isinstance(value, (int, float)):
+                    continue
+                if "unfollow" in label or "nonfollower" in label:
+                    row["unfollows"] = int(value)
+                elif "follow" in label or "follower" in label:
+                    row["follows"] = int(value)
+
+    def _extract_follow_unfollow_history(self, data: dict) -> list:
+        daily = {}
+        for item in data.get("data", []):
+            if item.get("name") != "follows_and_unfollows":
+                continue
+            for v in item.get("values", []):
+                end_time = v.get("end_time", "")
+                self._merge_follow_unfollow_value(daily, end_time[:10] if end_time else None, v.get("value"))
+
+            total_value = item.get("total_value")
+            if isinstance(total_value, dict):
+                end_time = item.get("period_end_time") or item.get("end_time")
+                self._merge_follow_unfollow_value(daily, end_time[:10] if end_time else None, total_value.get("value"))
+                self._merge_follow_unfollow_breakdowns(daily, end_time, total_value.get("breakdowns", []))
+
+        return sorted((row for row in daily.values() if row.get("date")), key=lambda x: x["date"])
+
+    def fetch_follow_unfollow_history(self, days: int = 90) -> list:
+        """follows_and_unfollows metriğini deneyip günlük follow/unfollow ayrımı döndürür."""
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        until = datetime.now(timezone.utc)
+        attempts = [
+            {"metric": "follows_and_unfollows", "period": "day", "metric_type": "total_value",
+             "breakdown": "follow_type"},
+            {"metric": "follows_and_unfollows", "period": "day", "metric_type": "total_value"},
+            {"metric": "follows_and_unfollows", "period": "day"},
+        ]
+
+        for params in attempts:
+            request_params = {
+                **params,
+                "since": int(since.timestamp()),
+                "until": int(until.timestamp()),
+            }
+            data = self._get(f"{GRAPH_API_BASE}/me/insights", request_params)
+            if "error" in data:
+                log.info(f"  follows_and_unfollows denenemedi ({params}): "
+                         f"{data['error'].get('message', '')}")
+                continue
+
+            results = self._extract_follow_unfollow_history(data)
+            if results:
+                log.info(f"  follows_and_unfollows: {len(results)} gün alındı.")
+                return results
+
+            log.info(f"  follows_and_unfollows cevap verdi ama günlük ayrım parse edilemedi ({params}).")
+
+        return []
+
     # ── Demographics ──
     def fetch_demographics(self) -> dict:
         """Takipçi demografisi. Creator hesabında bazıları çalışmayabilir."""
@@ -620,10 +707,11 @@ def insert_demographics(conn: sqlite3.Connection, fetched_at: str, demographics:
 
 
 def upsert_follower_daily(conn: sqlite3.Connection, date: str, followers_count: int,
-                          followers_delta: int | None, source: str):
+                          followers_delta: int | None, source: str,
+                          follows: int | None = None, unfollows: int | None = None):
     conn.execute("""
-    INSERT INTO follower_daily (date, followers_count, followers_delta, source)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO follower_daily (date, followers_count, followers_delta, follows, unfollows, source)
+    VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(date) DO UPDATE SET
         followers_count = CASE
             WHEN excluded.source = 'snapshot' THEN excluded.followers_count
@@ -631,11 +719,13 @@ def upsert_follower_daily(conn: sqlite3.Connection, date: str, followers_count: 
             ELSE excluded.followers_count
         END,
         followers_delta = COALESCE(excluded.followers_delta, follower_daily.followers_delta),
+        follows = COALESCE(excluded.follows, follower_daily.follows),
+        unfollows = COALESCE(excluded.unfollows, follower_daily.unfollows),
         source = CASE
             WHEN excluded.source = 'snapshot' OR follower_daily.source = 'snapshot' THEN 'snapshot'
             ELSE excluded.source
         END
-    """, (date, followers_count, followers_delta, source))
+    """, (date, followers_count, followers_delta, follows, unfollows, source))
 
 
 def insert_online_followers(conn: sqlite3.Connection, fetched_at: str, online: dict):
@@ -791,9 +881,31 @@ def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, 
              f"{min(snapshots_by_day) if snapshots_by_day else '-'} - "
              f"{max(snapshots_by_day) if snapshots_by_day else '-'}")
 
-    # 2. API'den delta verisi çek
+    # 2. API'den takip / bırakma verisini çek. Bu gelirse net değişim daha güvenilir olur.
+    follow_unfollow_list = fetcher.fetch_follow_unfollow_history(days)
+    follow_unfollow_by_date = {d["date"]: d for d in follow_unfollow_list}
+    net_delta_dict: dict[str, int] = {}
+    for date_str, row in follow_unfollow_by_date.items():
+        follows = row.get("follows")
+        unfollows = row.get("unfollows")
+        if follows is not None and unfollows is not None:
+            net_delta_dict[date_str] = follows - unfollows
+
+    if net_delta_dict:
+        total_follows = sum((row.get("follows") or 0) for row in follow_unfollow_by_date.values())
+        total_unfollows = sum((row.get("unfollows") or 0) for row in follow_unfollow_by_date.values())
+        log.info(f"  follows_and_unfollows net kullanılacak: "
+                 f"{total_follows} follows, {total_unfollows} unfollows.")
+
+    # Eski follower_count metriği yedek olarak tutulur.
     deltas_list = fetcher.fetch_follower_history(days)
-    if not deltas_list:
+    fallback_delta_dict: dict[str, int] = {d["date"]: d["delta"] for d in deltas_list}
+    if not net_delta_dict:
+        net_delta_dict = fallback_delta_dict
+        if net_delta_dict:
+            log.warning("  follows_and_unfollows günlük net vermedi; follower_count metriğiyle devam ediliyor.")
+
+    if not net_delta_dict:
         # API'den veri gelmedi; sadece snapshot'ları aktar
         log.warning("[backfill] API'den delta alınamadı, yalnızca snapshot verisi kaydediliyor.")
         for date_str, count in snapshots_by_day.items():
@@ -801,8 +913,7 @@ def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, 
         conn.commit()
         return
 
-    delta_dict: dict[str, int] = {d["date"]: d["delta"] for d in deltas_list}
-    log.info(f"  API delta aralığı: {min(delta_dict)} - {max(delta_dict)}")
+    log.info(f"  API net delta aralığı: {min(net_delta_dict)} - {max(net_delta_dict)}")
 
     # 3. Referans noktası: en güncel snapshot (bugün veya dünün gerçek sayısı)
     latest_snapshot_date = max(snapshots_by_day)
@@ -813,7 +924,7 @@ def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, 
     #    count[d-1] = count[d] - delta[d]
     from datetime import date as date_cls
     ref_date = date_cls.fromisoformat(latest_snapshot_date)
-    earliest = date_cls.fromisoformat(min(delta_dict))
+    earliest = date_cls.fromisoformat(min(net_delta_dict))
 
     reconstructed: dict[str, int] = {}
     current_count = reference_count
@@ -822,7 +933,7 @@ def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, 
     while current_date >= earliest:
         date_str = str(current_date)
         reconstructed[date_str] = current_count
-        delta = delta_dict.get(date_str, 0)
+        delta = net_delta_dict.get(date_str, 0)
         current_count -= delta
         current_date -= timedelta(days=1)
 
@@ -830,12 +941,17 @@ def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, 
     saved_snap, saved_api = 0, 0
     all_dates = set(reconstructed) | set(snapshots_by_day)
     for date_str in sorted(all_dates):
-        delta = delta_dict.get(date_str)
+        delta = net_delta_dict.get(date_str)
+        activity = follow_unfollow_by_date.get(date_str, {})
+        follows = activity.get("follows")
+        unfollows = activity.get("unfollows")
         if date_str in snapshots_by_day:
-            upsert_follower_daily(conn, date_str, snapshots_by_day[date_str], delta, "snapshot")
+            upsert_follower_daily(conn, date_str, snapshots_by_day[date_str], delta, "snapshot",
+                                  follows, unfollows)
             saved_snap += 1
         elif date_str in reconstructed:
-            upsert_follower_daily(conn, date_str, reconstructed[date_str], delta, "api_backfill")
+            upsert_follower_daily(conn, date_str, reconstructed[date_str], delta, "api_backfill",
+                                  follows, unfollows)
             saved_api += 1
 
     conn.commit()

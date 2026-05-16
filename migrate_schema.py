@@ -169,10 +169,14 @@ def migrate(conn: sqlite3.Connection):
         date TEXT PRIMARY KEY,
         followers_count INTEGER,
         followers_delta INTEGER,
+        follows INTEGER,
+        unfollows INTEGER,
         source TEXT
     )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_follower_daily_date ON follower_daily(date)")
+    add_column_if_missing(cur, "follower_daily", "follows", "INTEGER")
+    add_column_if_missing(cur, "follower_daily", "unfollows", "INTEGER")
 
     conn.commit()
     log.info("Migration tamamlandı.")

@@ -103,7 +103,11 @@ def follower_change(conn: sqlite3.Connection, days: int) -> int | None:
               -
               (SELECT followers_count
                FROM follower_daily
-               WHERE date <= ? AND followers_count IS NOT NULL
+               WHERE followers_count IS NOT NULL
+                 AND date <= COALESCE(
+                   (SELECT MAX(date) FROM follower_daily WHERE date <= ? AND followers_count IS NOT NULL),
+                   (SELECT MIN(date) FROM follower_daily WHERE followers_count IS NOT NULL)
+                 )
                ORDER BY date DESC LIMIT 1)
         """, (cutoff,)).fetchone()
         return row[0] if row and row[0] is not None else None
@@ -163,6 +167,27 @@ def get_follower_timeseries(conn: sqlite3.Connection, days: int) -> list:
         ORDER BY d
     """, (cutoff,)).fetchall()
     return [{"t": r[0], "v": r[2]} for r in rows]
+
+
+def get_follower_activity_timeseries(conn: sqlite3.Connection, days: int) -> list:
+    if not safe(conn, "follower_daily"):
+        return []
+    cols = columns_of(conn, "follower_daily")
+    if not {"follows", "unfollows"}.issubset(cols):
+        return []
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
+    rows = conn.execute("""
+        SELECT date, follows, unfollows, followers_delta
+        FROM follower_daily
+        WHERE date >= ?
+          AND (follows IS NOT NULL OR unfollows IS NOT NULL OR followers_delta IS NOT NULL)
+        ORDER BY date
+    """, (cutoff,)).fetchall()
+    return [
+        {"d": r[0], "follows": r[1], "unfollows": r[2], "net": r[3]}
+        for r in rows
+    ]
 
 
 def get_account_insights_series(conn: sqlite3.Connection, days: int) -> list:
@@ -374,6 +399,7 @@ def build_payload() -> dict:
             "schema_version": 2,
             "profile": get_latest_profile(conn),
             "follower_timeseries": get_follower_timeseries(conn, days=FOLLOWER_LOOKBACK_DAYS),
+            "follower_activity_timeseries": get_follower_activity_timeseries(conn, days=FOLLOWER_LOOKBACK_DAYS),
             "account_insights_timeseries": get_account_insights_series(conn, days=ACCOUNT_LOOKBACK_DAYS),
             "online_followers_heatmap": get_online_followers(conn),
             "demographics": get_demographics(conn),
