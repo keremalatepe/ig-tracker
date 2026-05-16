@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Instagram Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
   :root { color-scheme: light; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -203,7 +204,7 @@ const fmtDateTime = iso => {
 
 let DATA = null;
 let activeTab = "summary";
-let followerRange = 90;
+let followerRange = 30;
 let accountRange = 30;
 let postSort = "views";
 let chartsByTab = {};
@@ -311,6 +312,8 @@ function renderSummary() {
     <div class="card">
       <h3>Takipçi Trendi</h3>
       <div class="range-sel">
+        <button class="${followerRange===3?'active':''}" onclick="setFollowerRange(3)">3g</button>
+        <button class="${followerRange===7?'active':''}" onclick="setFollowerRange(7)">7g</button>
         <button class="${followerRange===30?'active':''}" onclick="setFollowerRange(30)">30g</button>
         <button class="${followerRange===90?'active':''}" onclick="setFollowerRange(90)">90g</button>
         <button class="${followerRange===365?'active':''}" onclick="setFollowerRange(365)">1y</button>
@@ -328,17 +331,57 @@ function setFollowerRange(d) { followerRange = d; renderSummary(); }
 
 function drawFollowerChart() {
   const series = DATA.follower_timeseries || [];
-  const cutoff = new Date(Date.now() - followerRange * 86400000).toISOString().slice(0, 10);
-  const filtered = series.filter(p => p.t >= cutoff);
+  const cutoffMs = Date.now() - followerRange * 86400000;
+  const filtered = series
+    .map(p => ({ x: new Date(p.t), y: p.v }))
+    .filter(p => p.x.getTime() >= cutoffMs)
+    .sort((a, b) => a.x - b.x);
+
   const ctx = document.getElementById("chart-follower");
   if (!ctx) return;
+
+  // kısa aralıklarda saat:dakika, uzun aralıklarda sadece tarih göster
+  const showTime = followerRange <= 7;
+  const tooltipFmt = showTime ? "d MMM HH:mm" : "d MMM yyyy";
+  const tickUnit = followerRange <= 3 ? "hour" : followerRange <= 7 ? "day" : followerRange <= 90 ? "week" : "month";
+
   chartsByTab.follower = new Chart(ctx, {
     type: "line",
     data: {
-      labels: filtered.map(p => p.t),
-      datasets: [{ label: "Takipçi", data: filtered.map(p => p.v), borderColor: "#833ab4", backgroundColor: "rgba(131,58,180,0.1)", fill: true, tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 }]
+      datasets: [{
+        label: "Takipçi",
+        data: filtered,
+        borderColor: "#833ab4",
+        backgroundColor: "rgba(131,58,180,0.1)",
+        fill: true,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2
+      }]
     },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } }, y: { ticks: { font: { size: 10 } } } } }
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => {
+          const d = new Date(items[0].parsed.x);
+          return showTime
+            ? d.toLocaleString("tr-TR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })
+            : d.toLocaleDateString("tr-TR", { day:"2-digit", month:"short", year:"numeric" });
+        }
+      }}},
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: tickUnit, tooltipFormat: tooltipFmt,
+            displayFormats: { hour: "HH:mm", day: "d MMM", week: "d MMM", month: "MMM yy" }
+          },
+          ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } }
+        },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
   });
 }
 
@@ -532,14 +575,32 @@ function toggleMetric(k) {
 
 function drawAccountChart() {
   const series = DATA.account_insights_timeseries || [];
-  const cutoff = new Date(Date.now() - accountRange * 86400000).toISOString().slice(0, 10);
-  const filt = series.filter(p => p.d >= cutoff);
+  const cutoffMs = Date.now() - accountRange * 86400000;
+  const filt = series
+    .map(p => ({ ...p, _x: new Date(p.d) }))
+    .filter(p => p._x.getTime() >= cutoffMs)
+    .sort((a, b) => a._x - b._x);
   const ctx = document.getElementById("chart-account");
   if (!ctx) return;
+  const tickUnit = accountRange <= 30 ? "day" : accountRange <= 90 ? "week" : "month";
   chartsByTab.account = new Chart(ctx, {
     type: "line",
-    data: { labels: filt.map(x => x.d), datasets: accountMetrics.map(k => ({ label: ACCOUNT_METRIC_LABELS[k], data: filt.map(x => x[k]), borderColor: ACCOUNT_METRIC_COLORS[k], backgroundColor: "transparent", tension: 0.25, borderWidth: 2 })) },
-    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { font: { size: 11 } } } }, scales: { x: { ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } }, y: { ticks: { font: { size: 10 } } } } }
+    data: { datasets: accountMetrics.map(k => ({
+      label: ACCOUNT_METRIC_LABELS[k],
+      data: filt.map(p => ({ x: p._x, y: p[k] })),
+      borderColor: ACCOUNT_METRIC_COLORS[k],
+      backgroundColor: "transparent",
+      tension: 0.25, borderWidth: 2
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { labels: { font: { size: 11 } } } },
+      scales: {
+        x: { type: "time", time: { unit: tickUnit, displayFormats: { day: "d MMM", week: "d MMM", month: "MMM yy" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
   });
 }
 
