@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Instagram Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #1a1a1a; background: #fafafa; font-size: 15px; line-height: 1.4;
+  }
+  .container { max-width: 980px; margin: 0 auto; padding: 12px; }
+
+  .hdr {
+    display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+    color: #fff; padding: 16px; border-radius: 14px;
+    box-shadow: 0 2px 14px rgba(0,0,0,0.08); margin-bottom: 14px;
+  }
+  .hdr-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); display: flex; align-items: center;
+    justify-content: center; font-size: 22px; overflow: hidden; flex-shrink: 0;
+  }
+  .hdr-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .hdr-info { flex: 1; min-width: 0; }
+  .hdr-name { font-size: 17px; font-weight: 700; margin: 0; }
+  .hdr-user { opacity: 0.9; font-size: 13px; margin: 2px 0 0; }
+  .hdr-stats { display: flex; gap: 18px; margin-top: 6px; font-size: 13px; }
+  .hdr-stats b { font-size: 15px; }
+  .refresh-btn {
+    background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4);
+    color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px;
+    font-weight: 600; cursor: pointer; margin-left: auto; flex-shrink: 0;
+  }
+  .refresh-btn:hover { background: rgba(255,255,255,0.3); }
+
+  .tabs {
+    display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px;
+    margin-bottom: 12px; scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+  }
+  .tab {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 999px;
+    padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    white-space: nowrap; color: #555; transition: all 0.15s;
+  }
+  .tab:hover { background: #f0f0f0; }
+  .tab.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+  .card {
+    background: #fff; border-radius: 12px; padding: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04); border: 1px solid #f0f0f0; margin-bottom: 12px;
+  }
+  .card h3 { margin: 0 0 10px; font-size: 14px; font-weight: 700; color: #222; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  @media (min-width: 640px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+  .kpi { background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; padding: 10px; }
+  .kpi-label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .kpi-delta { font-size: 12px; margin-top: 2px; }
+  .delta-up { color: #16a34a; }
+  .delta-down { color: #dc2626; }
+  .delta-flat { color: #888; }
+
+  .range-sel {
+    display: inline-flex; gap: 2px; background: #f0f0f0; padding: 2px;
+    border-radius: 8px; font-size: 12px; margin-bottom: 8px;
+  }
+  .range-sel button {
+    background: transparent; border: 0; padding: 5px 10px; border-radius: 6px;
+    cursor: pointer; color: #666; font-size: 12px; font-weight: 600;
+  }
+  .range-sel button.active { background: #fff; color: #1a1a1a; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+
+  .chart-wrap { position: relative; height: 220px; }
+  @media (min-width: 640px) { .chart-wrap { height: 260px; } }
+
+  .metric-toggle { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .metric-btn {
+    background: #f0f0f0; border: none; border-radius: 6px;
+    padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; color: #555;
+  }
+  .metric-btn.active { background: #1a1a1a; color: #fff; }
+
+  .post-list { display: grid; gap: 8px; }
+  .post-item {
+    display: flex; gap: 10px; align-items: flex-start;
+    background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; padding: 8px; cursor: pointer;
+  }
+  .post-item:hover { border-color: #ccc; }
+  .post-thumb {
+    width: 56px; height: 56px; border-radius: 8px; object-fit: cover;
+    background: #eee; flex-shrink: 0;
+  }
+  .post-meta { flex: 1; min-width: 0; font-size: 12px; }
+  .post-caption {
+    font-size: 13px; color: #333; line-height: 1.3;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .post-date { color: #888; font-size: 11px; margin-top: 3px; }
+  .post-badges { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; background: #f3f4f6; color: #555; font-weight: 600; }
+  .badge-reels { background: #fef3c7; color: #92400e; }
+  .badge-feed { background: #dbeafe; color: #1e40af; }
+  .badge-carousel { background: #ede9fe; color: #6d28d9; }
+  .badge-story { background: #dcfce7; color: #166534; }
+  .post-stats {
+    display: grid; grid-template-columns: repeat(4, auto); gap: 6px 10px;
+    text-align: right; font-size: 11px; align-items: center;
+  }
+  .post-stat { white-space: nowrap; }
+  .post-stat b { display: block; font-size: 13px; color: #1a1a1a; font-weight: 700; }
+  .post-stat span { color: #888; font-size: 10px; }
+
+  .sort-bar { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 8px; }
+  .sort-bar button {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    padding: 5px 9px; font-size: 11px; cursor: pointer; white-space: nowrap; font-weight: 600; color: #555;
+  }
+  .sort-bar button.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: none; align-items: flex-end; justify-content: center; z-index: 100;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: #fff; width: 100%; max-width: 720px;
+    max-height: 88vh; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 16px; position: relative;
+  }
+  @media (min-width: 640px) { .modal-bg { align-items: center; } .modal { border-radius: 16px; max-height: 90vh; } }
+  .modal-hdr { display: flex; gap: 10px; margin-bottom: 12px; }
+  .modal-hdr img { width: 72px; height: 72px; border-radius: 8px; object-fit: cover; }
+  .modal-close {
+    position: absolute; top: 12px; right: 14px;
+    background: rgba(0,0,0,0.05); border: 0; width: 30px; height: 30px;
+    border-radius: 50%; font-size: 18px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .demo-bar-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .demo-bar-key { width: 70px; flex-shrink: 0; color: #555; }
+  .demo-bar-fill { flex: 1; background: #f0f0f0; border-radius: 4px; height: 18px; overflow: hidden; }
+  .demo-bar-inner { height: 100%; background: linear-gradient(90deg, #833ab4, #fd1d1d); border-radius: 4px; }
+  .demo-bar-val { font-weight: 700; font-size: 11px; min-width: 40px; text-align: right; color: #333; }
+
+  .pane { display: none; }
+  .pane.active { display: block; }
+
+  .loading, .empty { text-align: center; padding: 40px 20px; color: #888; font-size: 14px; }
+  .loading::before {
+    content: ''; display: inline-block; width: 18px; height: 18px;
+    border: 2px solid #ddd; border-top-color: #833ab4; border-radius: 50%;
+    margin-right: 8px; vertical-align: middle;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .footer-info { text-align: center; font-size: 11px; color: #aaa; margin: 16px 0 8px; }
+  a { color: #6d28d9; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .story-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  @media (min-width: 480px) { .story-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 640px) { .story-grid { grid-template-columns: repeat(4, 1fr); } }
+  .story-card { background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; overflow: hidden; cursor: pointer; }
+  .story-card:hover { border-color: #ccc; }
+  .story-thumb-wrap { position: relative; aspect-ratio: 9/16; background: #eee; overflow: hidden; }
+  .story-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+  .story-thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #bbb; }
+  .story-info { padding: 6px 8px; }
+  .story-date { font-size: 10px; color: #888; }
+  .story-stats { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+  .story-stat { font-size: 10px; color: #555; }
+  .story-stat b { color: #1a1a1a; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div id="root"><div class="loading">Veri yükleniyor…</div></div>
+</div>
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this) closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
+<script>
+const DATA_URL = "https://raw.githubusercontent.com/keremalatepe/ig-tracker/main/dashboard_data.json";
+
+const fmt = new Intl.NumberFormat("tr-TR");
+const fmtNum = n => (n == null || isNaN(n)) ? "—" : fmt.format(Math.round(n));
+const fmtSec = ms => ms == null ? "—" : (ms / 1000).toFixed(1) + "s";
+const fmtDate = iso => {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("tr-TR", { day: "2-digit", month: "short", year: "numeric" });
+};
+const fmtDateTime = iso => {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+};
+
+let DATA = null;
+let activeTab = "summary";
+let followerRange = 90;
+let accountRange = 30;
+let postSort = "views";
+let chartsByTab = {};
+let accountMetrics = ["reach", "total_interactions", "profile_views"];
+
+const ACCOUNT_METRIC_LABELS = {
+  reach: "Erişim", profile_views: "Profil Z.", total_interactions: "Etkileşim",
+  accounts_engaged: "Etkil. Hesap", website_clicks: "Web Tıkl.", follower_count: "Takipçi",
+};
+const ACCOUNT_METRIC_COLORS = {
+  reach: "#833ab4", profile_views: "#fd1d1d", total_interactions: "#fcb045",
+  accounts_engaged: "#0ea5e9", website_clicks: "#10b981", follower_count: "#6366f1",
+};
+
+function deltaHtml(d) {
+  if (d == null) return '<span class="kpi-delta delta-flat">—</span>';
+  if (d > 0) return `<span class="kpi-delta delta-up">▲ ${fmt.format(d)}</span>`;
+  if (d < 0) return `<span class="kpi-delta delta-down">▼ ${fmt.format(Math.abs(d))}</span>`;
+  return '<span class="kpi-delta delta-flat">—</span>';
+}
+
+function badgeForType(pt, mt) {
+  if (pt === "REELS") return '<span class="badge badge-reels">REELS</span>';
+  if (mt === "CAROUSEL_ALBUM") return '<span class="badge badge-carousel">CAROUSEL</span>';
+  if (mt === "VIDEO") return '<span class="badge badge-feed">VIDEO</span>';
+  return '<span class="badge badge-feed">FEED</span>';
+}
+
+function render() {
+  const profile = (DATA && DATA.profile) || {};
+  const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
+  const lastRun = DATA && DATA.recent_runs && DATA.recent_runs[0];
+
+  let avatarHtml = profile.username ? `<span>${profile.username[0].toUpperCase()}</span>` : '<span>?</span>';
+  if (profile.profile_picture_url)
+    avatarHtml = `<img src="${profile.profile_picture_url}" alt="" onerror="this.style.display='none'" />`;
+
+  const tabs = [
+    { id: "summary", label: "Özet" }, { id: "posts", label: "İçerikler" },
+    { id: "reels", label: "Reels" }, { id: "stories", label: "Stories" },
+    { id: "account", label: "Hesap" }, { id: "demo", label: "Demografik" },
+    { id: "runs", label: "Çalışmalar" },
+  ];
+
+  document.getElementById("root").innerHTML = `
+    <div class="hdr">
+      <div class="hdr-avatar">${avatarHtml}</div>
+      <div class="hdr-info">
+        <p class="hdr-name">${profile.name || profile.username || "—"}</p>
+        <p class="hdr-user">@${profile.username || "—"}</p>
+        <div class="hdr-stats">
+          <span><b>${fmtNum(profile.followers_count)}</b> takipçi</span>
+          <span><b>${fmtNum(profile.media_count)}</b> içerik</span>
+          ${profile.follows_count != null ? `<span><b>${fmtNum(profile.follows_count)}</b> takip</span>` : ""}
+        </div>
+      </div>
+      <button class="refresh-btn" onclick="load()">↻ Yenile</button>
+    </div>
+    <div class="tabs">
+      ${tabs.map(t => `<button class="tab ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`).join("")}
+    </div>
+    ${tabs.map(t => `<div class="pane ${activeTab===t.id?'active':''}" id="pane-${t.id}"></div>`).join("")}
+    <p class="footer-info">
+      Son güncelleme: ${updated}
+      ${lastRun ? ` · ${lastRun.mode} · <span style="color:${lastRun.status==='success'?'#16a34a':'#dc2626'}">${lastRun.status}</span>` : ""}
+    </p>`;
+
+  renderPane(activeTab);
+}
+
+function setTab(t) {
+  activeTab = t;
+  Object.values(chartsByTab).forEach(c => { try { c.destroy(); } catch(e){} });
+  chartsByTab = {};
+  render();
+}
+
+function renderPane(tab) {
+  if (tab === "summary") renderSummary();
+  else if (tab === "posts") renderPosts(false);
+  else if (tab === "reels") renderPosts(true);
+  else if (tab === "stories") renderStories();
+  else if (tab === "account") renderAccount();
+  else if (tab === "demo") renderDemo();
+  else if (tab === "runs") renderRuns();
+}
+
+function renderSummary() {
+  const p = DATA.profile || {};
+  const topByViews = [...(DATA.posts || [])]
+    .filter(x => x.latest && x.latest.views != null)
+    .sort((a, b) => (b.latest.views || 0) - (a.latest.views || 0))
+    .slice(0, 5);
+
+  document.getElementById("pane-summary").innerHTML = `
+    <div class="card">
+      <h3>Takipçi Özeti</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Toplam</div><div class="kpi-value">${fmtNum(p.followers_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Son 7 gün</div><div class="kpi-value">${fmtNum(p.follower_change_7d)}</div>${deltaHtml(p.follower_change_7d)}</div>
+        <div class="kpi"><div class="kpi-label">Son 30 gün</div><div class="kpi-value">${fmtNum(p.follower_change_30d)}</div>${deltaHtml(p.follower_change_30d)}</div>
+        <div class="kpi"><div class="kpi-label">Son 90 gün</div><div class="kpi-value">${fmtNum(p.follower_change_90d)}</div>${deltaHtml(p.follower_change_90d)}</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Takipçi Trendi</h3>
+      <div class="range-sel">
+        <button class="${followerRange===30?'active':''}" onclick="setFollowerRange(30)">30g</button>
+        <button class="${followerRange===90?'active':''}" onclick="setFollowerRange(90)">90g</button>
+        <button class="${followerRange===365?'active':''}" onclick="setFollowerRange(365)">1y</button>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-follower"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>En Çok İzlenen 5 İçerik</h3>
+      <div class="post-list">${topByViews.length ? topByViews.map(renderPostItem).join("") : '<div class="empty">Henüz post verisi yok.</div>'}</div>
+    </div>`;
+  drawFollowerChart();
+}
+
+function setFollowerRange(d) { followerRange = d; renderSummary(); }
+
+function drawFollowerChart() {
+  const series = DATA.follower_timeseries || [];
+  const cutoff = new Date(Date.now() - followerRange * 86400000).toISOString().slice(0, 10);
+  const filtered = series.filter(p => p.t >= cutoff);
+  const ctx = document.getElementById("chart-follower");
+  if (!ctx) return;
+  chartsByTab.follower = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: filtered.map(p => p.t),
+      datasets: [{ label: "Takipçi", data: filtered.map(p => p.v), borderColor: "#833ab4", backgroundColor: "rgba(131,58,180,0.1)", fill: true, tension: 0.25, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { x: { ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } }, y: { ticks: { font: { size: 10 } } } } }
+  });
+}
+
+function renderPostItem(p) {
+  const l = p.latest || {};
+  return `
+    <div class="post-item" onclick='openPost(${JSON.stringify(p.id).replace(/'/g,"&#39;")})'>
+      ${p.thumbnail ? `<img class="post-thumb" src="${p.thumbnail}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.3" />` : '<div class="post-thumb"></div>'}
+      <div class="post-meta">
+        <div class="post-caption">${(p.caption_short || "").replace(/</g, "&lt;")}</div>
+        <div class="post-date">${fmtDate(p.posted_at)}</div>
+        <div class="post-badges">${badgeForType(p.product_type, p.type)}${l.follows ? `<span class="badge">+${fmtNum(l.follows)} takip</span>` : ""}</div>
+      </div>
+      <div class="post-stats">
+        <div class="post-stat"><b>${fmtNum(l.views)}</b><span>izl</span></div>
+        <div class="post-stat"><b>${fmtNum(l.reach)}</b><span>erş</span></div>
+        <div class="post-stat"><b>${fmtNum(l.likes)}</b><span>♥</span></div>
+        <div class="post-stat"><b>${fmtNum(l.saved)}</b><span>kydt</span></div>
+      </div>
+    </div>`;
+}
+
+function renderPosts(reelsOnly) {
+  let posts = DATA.posts || [];
+  if (reelsOnly) posts = posts.filter(p => p.product_type === "REELS");
+  posts = [...posts].sort((a, b) => {
+    if (postSort === "posted_at") return (b.posted_at || "").localeCompare(a.posted_at || "");
+    return ((b.latest || {})[postSort] || 0) - ((a.latest || {})[postSort] || 0);
+  });
+  const sortOptions = reelsOnly
+    ? ["views", "follows", "profile_visits", "ig_reels_avg_watch_time", "reach", "likes", "saved", "shares"]
+    : ["views", "follows", "profile_visits", "reach", "likes", "saved", "shares", "comments"];
+  const labels = { views:"İzlenme", reach:"Erişim", likes:"Beğeni", saved:"Kayıt", shares:"Paylaşım", follows:"Takip", profile_visits:"Profil Z.", comments:"Yorum", ig_reels_avg_watch_time:"Ort. İzl.", posted_at:"Tarih" };
+  document.getElementById(reelsOnly ? "pane-reels" : "pane-posts").innerHTML = `
+    <div class="card">
+      <h3>${reelsOnly ? "Reels" : "Tüm İçerikler"} (${posts.length})</h3>
+      <div class="sort-bar">
+        ${sortOptions.map(k => `<button class="${postSort===k?'active':''}" onclick="setSort('${k}')">${labels[k]||k}</button>`).join("")}
+        <button class="${postSort==='posted_at'?'active':''}" onclick="setSort('posted_at')">Tarih</button>
+      </div>
+      <div class="post-list">${posts.length ? posts.map(renderPostItem).join("") : '<div class="empty">Henüz veri yok.</div>'}</div>
+    </div>`;
+}
+
+function setSort(k) { postSort = k; renderPane(activeTab); }
+
+function openPost(id) {
+  const p = (DATA.posts || []).find(x => x.id === id);
+  if (!p) return;
+  const l = p.latest || {};
+  const isReels = p.product_type === "REELS";
+  const stats = [
+    ["İzlenme", fmtNum(l.views)], ["Erişim", fmtNum(l.reach)],
+    ["Beğeni", fmtNum(l.likes)], ["Yorum", fmtNum(l.comments)],
+    ["Kayıt", fmtNum(l.saved)], ["Paylaşım", fmtNum(l.shares)],
+    ["Takip", fmtNum(l.follows)], ["Profil Ziyaret", fmtNum(l.profile_visits)],
+    ["Toplam Etkil.", fmtNum(l.total_interactions)],
+  ];
+  if (isReels) {
+    stats.push(["Ort. İzlenme", fmtSec(l.ig_reels_avg_watch_time)]);
+    stats.push(["Toplam İzl. Süresi", fmtSec(l.ig_reels_video_view_total_time)]);
+    stats.push(["Tekrar İzlenme", fmtNum(l.clips_replays_count)]);
+  }
+  const modal = document.getElementById("modal-content");
+  modal.innerHTML = `
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-hdr">
+      ${p.thumbnail ? `<img src="${p.thumbnail}" referrerpolicy="no-referrer" />` : ""}
+      <div style="flex:1;min-width:0">
+        <div class="post-badges">${badgeForType(p.product_type, p.type)}</div>
+        <div style="font-size:13px;margin-top:6px;line-height:1.3">${(p.caption_short || "").replace(/</g, "&lt;")}</div>
+        <div class="post-date">${fmtDate(p.posted_at)}</div>
+        ${p.permalink ? `<a href="${p.permalink}" target="_blank" style="font-size:12px">Instagram'da aç →</a>` : ""}
+      </div>
+    </div>
+    <div class="kpi-grid">
+      ${stats.filter(([k,v]) => v !== "—").map(([k,v]) => `<div class="kpi"><div class="kpi-label">${k}</div><div class="kpi-value" style="font-size:16px">${v}</div></div>`).join("")}
+    </div>
+    <div class="card" style="margin-top:12px;margin-bottom:0">
+      <h3>Zaman İçindeki Değişim</h3>
+      <div class="chart-wrap"><canvas id="chart-post-history"></canvas></div>
+    </div>`;
+  document.getElementById("modal-bg").classList.add("open");
+  document.body.style.overflow = "hidden";
+  const h = p.history || [];
+  setTimeout(() => {
+    const ctx = document.getElementById("chart-post-history");
+    if (!ctx || !h.length) return;
+    chartsByTab.postHistory = new Chart(ctx, {
+      type: "line",
+      data: { labels: h.map(x => fmtDate(x.t)), datasets: [
+        { label: "İzlenme", data: h.map(x => x.views), borderColor: "#833ab4", backgroundColor: "transparent", tension: 0.25, borderWidth: 2 },
+        { label: "Erişim", data: h.map(x => x.reach), borderColor: "#fd1d1d", backgroundColor: "transparent", tension: 0.25, borderWidth: 2 },
+        { label: "Beğeni", data: h.map(x => x.likes), borderColor: "#fcb045", backgroundColor: "transparent", tension: 0.25, borderWidth: 2 },
+      ]},
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { font: { size: 11 } } } }, scales: { x: { ticks: { maxRotation: 0, maxTicksLimit: 5, font: { size: 9 } } }, y: { ticks: { font: { size: 10 } } } } }
+    });
+  }, 50);
+}
+
+function closeModal() {
+  document.getElementById("modal-bg").classList.remove("open");
+  document.body.style.overflow = "";
+  if (chartsByTab.postHistory) { try { chartsByTab.postHistory.destroy(); } catch(e){} delete chartsByTab.postHistory; }
+}
+
+function renderStories() {
+  const stories = DATA.stories || [];
+  if (!stories.length) {
+    document.getElementById("pane-stories").innerHTML = `<div class="card"><h3>Stories</h3><div class="empty">Henüz story verisi yok.</div></div>`;
+    return;
+  }
+  document.getElementById("pane-stories").innerHTML = `
+    <div class="card">
+      <h3>Stories (${stories.length})</h3>
+      <div class="story-grid">
+        ${stories.map(s => {
+          const l = s.latest || {};
+          return `<div class="story-card" onclick='openStory(${JSON.stringify(s.id).replace(/'/g,"&#39;")})'>
+            <div class="story-thumb-wrap">
+              ${s.thumbnail ? `<img src="${s.thumbnail}" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='<div class=story-thumb-placeholder>📸</div>'" />` : '<div class="story-thumb-placeholder">📸</div>'}
+            </div>
+            <div class="story-info">
+              <div class="story-date">${fmtDate(s.posted_at)}</div>
+              <div class="story-stats">
+                ${l.views != null ? `<span class="story-stat"><b>${fmtNum(l.views)}</b> izl</span>` : ""}
+                ${l.reach != null ? `<span class="story-stat"><b>${fmtNum(l.reach)}</b> erş</span>` : ""}
+                ${l.replies != null ? `<span class="story-stat"><b>${fmtNum(l.replies)}</b> ynl</span>` : ""}
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+}
+
+function openStory(id) {
+  const s = (DATA.stories || []).find(x => x.id === id);
+  if (!s) return;
+  const l = s.latest || {};
+  const stats = [["İzlenme",fmtNum(l.views)],["Erişim",fmtNum(l.reach)],["Yanıt",fmtNum(l.replies)],["Toplam Etkil.",fmtNum(l.total_interactions)]];
+  document.getElementById("modal-content").innerHTML = `
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-hdr">
+      ${s.thumbnail ? `<img src="${s.thumbnail}" referrerpolicy="no-referrer" style="border-radius:8px;width:72px;height:128px;object-fit:cover" />` : ""}
+      <div style="flex:1;min-width:0">
+        <div class="post-badges"><span class="badge badge-story">STORY</span></div>
+        <div class="post-date" style="margin-top:8px">${fmtDate(s.posted_at)}</div>
+        ${s.permalink ? `<a href="${s.permalink}" target="_blank" style="font-size:12px">Instagram'da aç →</a>` : ""}
+      </div>
+    </div>
+    <div class="kpi-grid">
+      ${stats.filter(([k,v]) => v !== "—").map(([k,v]) => `<div class="kpi"><div class="kpi-label">${k}</div><div class="kpi-value" style="font-size:16px">${v}</div></div>`).join("")}
+    </div>`;
+  document.getElementById("modal-bg").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+
+function renderAccount() {
+  const series = DATA.account_insights_timeseries || [];
+  const heatmap = DATA.online_followers_heatmap || [];
+  document.getElementById("pane-account").innerHTML = `
+    <div class="card">
+      <h3>Hesap Performansı</h3>
+      <div class="range-sel">
+        <button class="${accountRange===30?'active':''}" onclick="setAccountRange(30)">30g</button>
+        <button class="${accountRange===90?'active':''}" onclick="setAccountRange(90)">90g</button>
+        <button class="${accountRange===365?'active':''}" onclick="setAccountRange(365)">1y</button>
+      </div>
+      <div class="metric-toggle">
+        ${Object.keys(ACCOUNT_METRIC_LABELS).map(k => `<button class="metric-btn ${accountMetrics.includes(k)?'active':''}" onclick="toggleMetric('${k}')">${ACCOUNT_METRIC_LABELS[k]}</button>`).join("")}
+      </div>
+      <div class="chart-wrap"><canvas id="chart-account"></canvas></div>
+      ${series.length === 0 ? '<div class="empty" style="padding:20px">Henüz hesap insights verisi yok.</div>' : ''}
+    </div>
+    <div class="card">
+      <h3>Takipçi Online Saatleri</h3>
+      ${heatmap.length === 0 ? '<div class="empty" style="padding:20px">Henüz online_followers verisi yok.</div>' : renderHeatmap(heatmap)}
+    </div>`;
+  if (series.length) drawAccountChart();
+}
+
+function setAccountRange(d) { accountRange = d; renderAccount(); }
+
+function toggleMetric(k) {
+  const idx = accountMetrics.indexOf(k);
+  if (idx >= 0) { if (accountMetrics.length > 1) accountMetrics.splice(idx, 1); }
+  else accountMetrics.push(k);
+  renderAccount();
+}
+
+function drawAccountChart() {
+  const series = DATA.account_insights_timeseries || [];
+  const cutoff = new Date(Date.now() - accountRange * 86400000).toISOString().slice(0, 10);
+  const filt = series.filter(p => p.d >= cutoff);
+  const ctx = document.getElementById("chart-account");
+  if (!ctx) return;
+  chartsByTab.account = new Chart(ctx, {
+    type: "line",
+    data: { labels: filt.map(x => x.d), datasets: accountMetrics.map(k => ({ label: ACCOUNT_METRIC_LABELS[k], data: filt.map(x => x[k]), borderColor: ACCOUNT_METRIC_COLORS[k], backgroundColor: "transparent", tension: 0.25, borderWidth: 2 })) },
+    options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { font: { size: 11 } } } }, scales: { x: { ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } }, y: { ticks: { font: { size: 10 } } } } }
+  });
+}
+
+function renderHeatmap(heatmap) {
+  const byHour = {};
+  heatmap.forEach(p => {
+    if (p.v == null) return;
+    if (!byHour[p.h]) byHour[p.h] = { sum: 0, count: 0 };
+    byHour[p.h].sum += p.v; byHour[p.h].count += 1;
+  });
+  const hours = Array.from({length: 24}, (_, h) => ({ h, avg: byHour[h] ? byHour[h].sum / byHour[h].count : 0 }));
+  const max = Math.max(...hours.map(x => x.avg)) || 1;
+  const peak = hours.reduce((a, b) => b.avg > a.avg ? b : a, hours[0]);
+  return `
+    <div style="display:flex;gap:2px;align-items:flex-end;height:100px;margin-top:8px">
+      ${hours.map(({h, avg}) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
+        <div style="width:100%;height:${(avg/max*100).toFixed(0)}%;background:linear-gradient(180deg,#833ab4,#fd1d1d);border-radius:2px;min-height:1px"></div>
+        <div style="font-size:8px;color:#aaa">${h}</div>
+      </div>`).join("")}
+    </div>
+    <div style="text-align:center;font-size:11px;color:#888;margin-top:4px">Saat (0-23 UTC) · Tepe: ${peak.h}:00</div>`;
+}
+
+function renderDemo() {
+  const demo = DATA.demographics || {};
+  const labels = { age:"Yaş", gender:"Cinsiyet", country:"Ülke", city:"Şehir" };
+  const sections = Object.keys(demo);
+  if (!sections.length) {
+    document.getElementById("pane-demo").innerHTML = `<div class="card"><h3>Demografik</h3><div class="empty">Henüz demografik veri yok.</div></div>`;
+    return;
+  }
+  document.getElementById("pane-demo").innerHTML = sections.map(s => {
+    const items = (demo[s] || []).slice(0, 10);
+    const max = Math.max(...items.map(x => x.v || 0)) || 1;
+    return `<div class="card"><h3>${labels[s]||s}</h3>${items.map(it => `
+      <div class="demo-bar-row">
+        <div class="demo-bar-key">${it.k}</div>
+        <div class="demo-bar-fill"><div class="demo-bar-inner" style="width:${(it.v/max*100).toFixed(1)}%"></div></div>
+        <div class="demo-bar-val">${fmtNum(it.v)}</div>
+      </div>`).join("")}</div>`;
+  }).join("");
+}
+
+function renderRuns() {
+  const runs = DATA.recent_runs || [];
+  document.getElementById("pane-runs").innerHTML = `
+    <div class="card">
+      <h3>Son Çalışmalar (${runs.length})</h3>
+      ${runs.length === 0 ? '<div class="empty">Henüz çalışma kaydı yok.</div>' : ""}
+      ${runs.map(r => `
+        <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:12px;">
+          <div><b>${r.mode||"—"}</b><span style="color:${r.status==='success'?'#16a34a':'#dc2626'};margin-left:6px">${r.status||"—"}</span></div>
+          <div style="color:#888;text-align:right">${fmtDateTime(r.started)}<br><span style="font-size:10px">${r.posts||0} post · ${r.stories||0} story · ${r.api_requests||0} API req</span></div>
+        </div>`).join("")}
+    </div>`;
+}
+
+async function load() {
+  document.getElementById("root").innerHTML = '<div class="loading">Veri yükleniyor…</div>';
+  try {
+    const res = await fetch(DATA_URL + "?t=" + Date.now());
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    DATA = await res.json();
+    if (!DATA || !DATA.profile) throw new Error("'profile' alanı bulunamadı.");
+    render();
+  } catch(err) {
+    document.getElementById("root").innerHTML = `
+      <div class="card" style="max-width:400px;margin:40px auto">
+        <h3>Veri yüklenemedi</h3>
+        <p style="font-size:13px;color:#666">${err.message}</p>
+        <p style="font-size:12px;color:#aaa">dashboard_data.json repoya push edildi mi?</p>
+        <button onclick="load()" style="margin-top:8px;padding:8px 16px;border-radius:8px;border:1px solid #ccc;cursor:pointer">Tekrar dene</button>
+      </div>`;
+  }
+}
+
+load();
+</script>
+</body>
+</html>
