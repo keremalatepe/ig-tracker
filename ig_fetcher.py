@@ -304,7 +304,7 @@ class InstagramFetcher:
         return data.get("data", []) if "error" not in data else []
 
     def fetch_story_insights(self, story_id: str) -> dict:
-        metrics = "reach,replies,views,total_interactions,navigation,shares,likes,comments,saved,follows,profile_visits,profile_activity"
+        metrics = "reach,replies,views,total_interactions,navigation"
         data = self._get(
             f"{GRAPH_API_BASE}/{story_id}/insights",
             {"metric": metrics},
