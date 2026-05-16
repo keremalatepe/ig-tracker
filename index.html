@@ -51,6 +51,7 @@
   }
   .tab:hover { background: #f0f0f0; }
   .tab.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  a.tab { display: inline-flex; align-items: center; text-decoration: none; }
 
   .card {
     background: #fff; border-radius: 12px; padding: 14px;
@@ -123,6 +124,15 @@
     padding: 5px 9px; font-size: 11px; cursor: pointer; white-space: nowrap; font-weight: 600; color: #555;
   }
   .sort-bar button.active { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  .list-meta { font-size: 12px; color: #888; margin-bottom: 8px; }
+  .pager { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .pager-info { font-size: 12px; color: #888; }
+  .pager-actions { display: flex; gap: 6px; }
+  .pager-actions button {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; cursor: pointer; font-weight: 600; color: #555;
+  }
+  .pager-actions button:disabled { opacity: 0.45; cursor: default; }
 
   .modal-bg {
     position: fixed; inset: 0; background: rgba(0,0,0,0.5);
@@ -188,7 +198,10 @@
   <div class="modal" id="modal-content"></div>
 </div>
 <script>
-const DATA_URL = "https://raw.githubusercontent.com/keremalatepe/ig-tracker/main/dashboard_data.json";
+const RAW_DATA_URL = "https://raw.githubusercontent.com/keremalatepe/ig-tracker/main/dashboard_data.json";
+const DATA_URLS = (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname.endsWith("github.io"))
+  ? ["dashboard_data.json", RAW_DATA_URL]
+  : [RAW_DATA_URL, "dashboard_data.json"];
 
 const fmt = new Intl.NumberFormat("tr-TR");
 const fmtNum = n => (n == null || isNaN(n)) ? "—" : fmt.format(Math.round(n));
@@ -209,6 +222,10 @@ let accountRange = 30;
 let postSort = "views";
 let chartsByTab = {};
 let accountMetrics = ["reach", "total_interactions", "profile_views"];
+let postsPage = 1;
+let reelsPage = 1;
+let storiesPage = 1;
+const PAGE_SIZE = 20;
 
 const ACCOUNT_METRIC_LABELS = {
   reach: "Erişim", profile_views: "Profil Z.", total_interactions: "Etkileşim",
@@ -218,6 +235,63 @@ const ACCOUNT_METRIC_COLORS = {
   reach: "#833ab4", profile_views: "#fd1d1d", total_interactions: "#fcb045",
   accounts_engaged: "#0ea5e9", website_clicks: "#10b981", follower_count: "#6366f1",
 };
+
+const allowedTabs = new Set(["summary", "posts", "reels", "stories", "account", "demo", "runs"]);
+const requestedTab = new URLSearchParams(location.search).get("tab");
+if (requestedTab && allowedTabs.has(requestedTab)) activeTab = requestedTab;
+
+function getLatestFetchedAt(items) {
+  let latest = null;
+  for (const item of items || []) {
+    const iso = item && item.latest && item.latest.fetched_at;
+    if (iso && (!latest || iso > latest)) latest = iso;
+  }
+  return latest;
+}
+
+function hasMeaningfulAccountData() {
+  const series = DATA && DATA.account_insights_timeseries || [];
+  const heatmap = DATA && DATA.online_followers_heatmap || [];
+  if (heatmap.length) return true;
+  const metricNames = new Set();
+  let daysWithData = 0;
+  for (const row of series) {
+    let hasDay = false;
+    for (const [k, v] of Object.entries(row || {})) {
+      if (k === "d" || v == null || v === 0) continue;
+      metricNames.add(k);
+      hasDay = true;
+    }
+    if (hasDay) daysWithData += 1;
+  }
+  return metricNames.size >= 2 || daysWithData >= 2;
+}
+
+function pageStateFor(tab) {
+  if (tab === "posts") return postsPage;
+  if (tab === "reels") return reelsPage;
+  return storiesPage;
+}
+
+function setPageState(tab, page) {
+  const next = Math.max(1, page);
+  if (tab === "posts") postsPage = next;
+  else if (tab === "reels") reelsPage = next;
+  else storiesPage = next;
+  renderPane(activeTab);
+}
+
+function renderPager(tab, page, totalPages, totalItems) {
+  if (totalItems <= PAGE_SIZE) return "";
+  return `
+    <div class="pager">
+      <div class="pager-info">Sayfa ${page}/${totalPages} · ${fmtNum(totalItems)} kayıt</div>
+      <div class="pager-actions">
+        <button onclick="setPageState('${tab}', ${page - 1})" ${page <= 1 ? "disabled" : ""}>Önceki</button>
+        <button onclick="setPageState('${tab}', ${page + 1})" ${page >= totalPages ? "disabled" : ""}>Sonraki</button>
+      </div>
+    </div>`;
+}
 
 function deltaHtml(d) {
   if (d == null) return '<span class="kpi-delta delta-flat">—</span>';
@@ -237,6 +311,8 @@ function render() {
   const profile = (DATA && DATA.profile) || {};
   const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
   const lastRun = DATA && DATA.recent_runs && DATA.recent_runs[0];
+  const showAccountTab = hasMeaningfulAccountData();
+  if (activeTab === "account" && !showAccountTab) activeTab = "summary";
 
   let avatarHtml = profile.username ? `<span>${profile.username[0].toUpperCase()}</span>` : '<span>?</span>';
   if (profile.profile_picture_url)
@@ -245,8 +321,8 @@ function render() {
   const tabs = [
     { id: "summary", label: "Özet" }, { id: "posts", label: "İçerikler" },
     { id: "reels", label: "Reels" }, { id: "stories", label: "Stories" },
-    { id: "account", label: "Hesap" }, { id: "demo", label: "Demografik" },
-    { id: "runs", label: "Çalışmalar" },
+    ...(showAccountTab ? [{ id: "account", label: "Hesap" }] : []),
+    { id: "demo", label: "Demografik" }, { id: "runs", label: "Çalışmalar" },
   ];
 
   document.getElementById("root").innerHTML = `
@@ -264,7 +340,9 @@ function render() {
       <button class="refresh-btn" onclick="load()">↻ Yenile</button>
     </div>
     <div class="tabs">
-      ${tabs.map(t => `<button class="tab ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`).join("")}
+      <button class="tab ${activeTab==='summary'?'active':''}" onclick="setTab('summary')">Özet</button>
+      <a class="tab" href="views.html">Diff</a>
+      ${tabs.filter(t => t.id !== 'summary').map(t => `<button class="tab ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`).join("")}
     </div>
     ${tabs.map(t => `<div class="pane ${activeTab===t.id?'active':''}" id="pane-${t.id}"></div>`).join("")}
     <p class="footer-info">
@@ -411,18 +489,29 @@ function renderPosts(reelsOnly) {
     if (postSort === "posted_at") return (b.posted_at || "").localeCompare(a.posted_at || "");
     return ((b.latest || {})[postSort] || 0) - ((a.latest || {})[postSort] || 0);
   });
+  const paneId = reelsOnly ? "pane-reels" : "pane-posts";
+  const tabKey = reelsOnly ? "reels" : "posts";
+  const page = pageStateFor(tabKey);
+  const totalPages = Math.max(1, Math.ceil(posts.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  if (safePage !== page) return setPageState(tabKey, safePage);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageItems = posts.slice(start, start + PAGE_SIZE);
+  const latestFetchedAt = getLatestFetchedAt(posts);
   const sortOptions = reelsOnly
     ? ["views", "follows", "profile_visits", "ig_reels_avg_watch_time", "reach", "likes", "saved", "shares"]
     : ["views", "follows", "profile_visits", "reach", "likes", "saved", "shares", "comments"];
   const labels = { views:"İzlenme", reach:"Erişim", likes:"Beğeni", saved:"Kayıt", shares:"Paylaşım", follows:"Takip", profile_visits:"Profil Z.", comments:"Yorum", ig_reels_avg_watch_time:"Ort. İzl.", posted_at:"Tarih" };
-  document.getElementById(reelsOnly ? "pane-reels" : "pane-posts").innerHTML = `
+  document.getElementById(paneId).innerHTML = `
     <div class="card">
       <h3>${reelsOnly ? "Reels" : "Tüm İçerikler"} (${posts.length})</h3>
+      <div class="list-meta">Son veri: ${latestFetchedAt ? fmtDateTime(latestFetchedAt) : "—"}</div>
       <div class="sort-bar">
         ${sortOptions.map(k => `<button class="${postSort===k?'active':''}" onclick="setSort('${k}')">${labels[k]||k}</button>`).join("")}
         <button class="${postSort==='posted_at'?'active':''}" onclick="setSort('posted_at')">Tarih</button>
       </div>
-      <div class="post-list">${posts.length ? posts.map(renderPostItem).join("") : '<div class="empty">Henüz veri yok.</div>'}</div>
+      <div class="post-list">${posts.length ? pageItems.map(renderPostItem).join("") : '<div class="empty">Henüz veri yok.</div>'}</div>
+      ${renderPager(tabKey, safePage, totalPages, posts.length)}
     </div>`;
 }
 
@@ -494,11 +583,18 @@ function renderStories() {
     document.getElementById("pane-stories").innerHTML = `<div class="card"><h3>Stories</h3><div class="empty">Henüz story verisi yok.</div></div>`;
     return;
   }
+  const page = pageStateFor("stories");
+  const totalPages = Math.max(1, Math.ceil(stories.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  if (safePage !== page) return setPageState("stories", safePage);
+  const start = (safePage - 1) * PAGE_SIZE;
+  const pageItems = stories.slice(start, start + PAGE_SIZE);
   document.getElementById("pane-stories").innerHTML = `
     <div class="card">
       <h3>Stories (${stories.length})</h3>
+      <div class="list-meta">Son export: ${DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—"}</div>
       <div class="story-grid">
-        ${stories.map(s => {
+        ${pageItems.map(s => {
           const l = s.latest || {};
           return `<div class="story-card" onclick='openStory(${JSON.stringify(s.id).replace(/'/g,"&#39;")})'>
             <div class="story-thumb-wrap">
@@ -515,6 +611,7 @@ function renderStories() {
           </div>`;
         }).join("")}
       </div>
+      ${renderPager("stories", safePage, totalPages, stories.length)}
     </div>`;
 }
 
@@ -543,6 +640,14 @@ function openStory(id) {
 function renderAccount() {
   const series = DATA.account_insights_timeseries || [];
   const heatmap = DATA.online_followers_heatmap || [];
+  if (!hasMeaningfulAccountData()) {
+    document.getElementById("pane-account").innerHTML = `
+      <div class="card">
+        <h3>Hesap</h3>
+        <div class="empty" style="padding:20px">Bu hesap için yeterli account insight verisi gelmiyor.</div>
+      </div>`;
+    return;
+  }
   document.getElementById("pane-account").innerHTML = `
     <div class="card">
       <h3>Hesap Performansı</h3>
@@ -661,9 +766,18 @@ function renderRuns() {
 async function load() {
   document.getElementById("root").innerHTML = '<div class="loading">Veri yükleniyor…</div>';
   try {
-    const res = await fetch(DATA_URL + "?t=" + Date.now());
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    DATA = await res.json();
+    let lastErr = null;
+    for (const url of DATA_URLS) {
+      try {
+        const res = await fetch(url + "?t=" + Date.now());
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        DATA = await res.json();
+        break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (!DATA) throw lastErr || new Error("Veri alınamadı.");
     if (!DATA || !DATA.profile) throw new Error("'profile' alanı bulunamadı.");
     render();
   } catch(err) {

@@ -1,0 +1,719 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Izlenme Diff</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f7f7f5;
+    --panel: #fff;
+    --text: #171717;
+    --muted: #737373;
+    --line: #e7e5e4;
+    --ink: #171717;
+    --green: #168a5b;
+    --amber: #b45309;
+    --blue: #2563eb;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.4;
+    overflow-x: hidden;
+  }
+  .container { max-width: 980px; margin: 0 auto; padding: 12px; overflow-x: hidden; }
+  h1 { margin: 0; font-size: 20px; line-height: 1.1; letter-spacing: 0; }
+  h3 { margin: 0 0 10px; font-size: 14px; }
+  .hdr {
+    display: flex; align-items: center; gap: 12px;
+    background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+    color: #fff; padding: 16px; border-radius: 14px;
+    box-shadow: 0 2px 14px rgba(0,0,0,0.08); margin-bottom: 14px;
+  }
+  .hdr-avatar {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); display: flex; align-items: center;
+    justify-content: center; font-size: 22px; overflow: hidden; flex-shrink: 0;
+  }
+  .hdr-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .hdr-info { flex: 1; min-width: 0; }
+  .hdr-name { font-size: 17px; font-weight: 700; margin: 0; }
+  .hdr-user { opacity: 0.9; font-size: 13px; margin: 2px 0 0; }
+  .hdr-stats { display: flex; gap: 18px; margin-top: 6px; font-size: 13px; }
+  .hdr-stats b { font-size: 15px; }
+  .refresh-btn {
+    background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.4);
+    color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px;
+    font-weight: 600; cursor: pointer; margin-left: auto; flex-shrink: 0;
+  }
+  .refresh-btn:hover { background: rgba(255,255,255,0.3); }
+  .tabs {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    margin-bottom: 12px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tab {
+    display: inline-flex;
+    align-items: center;
+    text-decoration: none;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    color: #555;
+    transition: all 0.15s;
+  }
+  .tab:hover { background: #f0f0f0; }
+  .tab.active {
+    background: #1a1a1a;
+    color: #fff;
+    border-color: #1a1a1a;
+  }
+  a.tab { display: inline-flex; align-items: center; text-decoration: none; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 10px;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  input, select, button {
+    font: inherit;
+  }
+  .field input, .field select {
+    width: 100%;
+    min-height: 38px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    color: var(--text);
+    padding: 8px 10px;
+    outline: none;
+  }
+  .field input:focus, .field select:focus {
+    border-color: #a3a3a3;
+    box-shadow: 0 0 0 3px rgba(37,99,235,0.10);
+  }
+  .fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  @media (min-width: 720px) {
+    .fields { grid-template-columns: 110px 110px 120px 150px 150px 140px; }
+  }
+  .field label {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+  }
+  .info-note {
+    margin-top: 10px;
+    padding: 9px 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fcfcfb;
+    color: #555;
+    font-size: 12px;
+  }
+  .info-note b {
+    color: var(--text);
+    font-size: 13px;
+  }
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (min-width: 760px) {
+    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  .stat {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+  }
+  .stat span {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .stat b {
+    display: block;
+    font-size: 22px;
+    line-height: 1.15;
+    margin-top: 4px;
+  }
+  .chart-wrap { width: 100%; min-width: 0; height: 260px; }
+  canvas { max-width: 100%; }
+  .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+  .table-head, .row {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr) 104px 92px 92px;
+    gap: 10px;
+    align-items: center;
+  }
+  .table-head {
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    padding: 0 8px 7px;
+  }
+  .row {
+    min-height: 70px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 8px;
+    margin-bottom: 7px;
+  }
+  .thumb {
+    width: 52px;
+    height: 52px;
+    border-radius: 7px;
+    object-fit: cover;
+    background: #e5e5e5;
+  }
+  .caption {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 650;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .meta {
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 3px;
+  }
+  .metric {
+    text-align: right;
+    white-space: nowrap;
+  }
+  .metric b {
+    display: block;
+    font-size: 16px;
+  }
+  .metric span {
+    display: block;
+    color: var(--muted);
+    font-size: 10px;
+  }
+  .diff b { color: var(--green); font-size: 18px; }
+  .flag {
+    display: inline-block;
+    border-radius: 5px;
+    padding: 2px 5px;
+    margin-top: 4px;
+    color: var(--amber);
+    background: #fff7ed;
+    font-size: 10px;
+    font-weight: 800;
+  }
+  .empty, .loading {
+    text-align: center;
+    color: var(--muted);
+    padding: 36px 16px;
+  }
+  .loading::before {
+    content: "";
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ddd;
+    border-top-color: var(--blue);
+    border-radius: 50%;
+    margin-right: 8px;
+    vertical-align: -3px;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 680px) {
+    .hdr { align-items: flex-start; flex-wrap: wrap; }
+    .refresh-btn { margin-left: 68px; }
+    .fields { grid-template-columns: 1fr; }
+    .table-head { display: none; }
+    .row {
+      grid-template-columns: 52px minmax(0, 1fr) 94px;
+      grid-template-areas:
+        "thumb title diff"
+        "thumb base total";
+    }
+    .thumb { grid-area: thumb; }
+    .title { grid-area: title; }
+    .diff { grid-area: diff; }
+    .base { grid-area: base; text-align: left; }
+    .total { grid-area: total; }
+    .latest { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div id="site-chrome">
+    <div class="loading">Veri yukleniyor</div>
+  </div>
+
+  <div class="panel">
+    <h3>Filtreler</h3>
+    <div class="fields">
+      <div class="field">
+        <label for="days">Son gun</label>
+        <input id="days" type="number" min="1" max="90" step="1" value="3" />
+      </div>
+      <div class="field">
+        <label for="limit">Sonuc</label>
+        <input id="limit" type="number" min="1" max="500" step="1" value="25" />
+      </div>
+      <div class="field">
+        <label for="curveCount">Egride</label>
+        <input id="curveCount" type="number" min="1" max="50" step="1" value="5" />
+      </div>
+      <div class="field">
+        <label for="minDiff">Min artis</label>
+        <input id="minDiff" type="text" inputmode="numeric" placeholder="0" />
+      </div>
+      <div class="field">
+        <label for="maxDiff">Maks artis</label>
+        <input id="maxDiff" type="text" inputmode="numeric" placeholder="bos" />
+      </div>
+      <div class="field">
+        <label for="typeFilter">Tip</label>
+        <select id="typeFilter">
+          <option value="video">Video</option>
+          <option value="reels">Reels</option>
+          <option value="all">Tum icerik</option>
+        </select>
+      </div>
+    </div>
+    <div class="info-note">Son veri guncelleme: <b id="dataUpdated">-</b></div>
+  </div>
+
+  <div class="panel">
+    <div class="stats">
+      <div class="stat"><span>Eslesen</span><b id="statCount">-</b></div>
+      <div class="stat"><span>Toplam diff</span><b id="statSum">-</b></div>
+      <div class="stat"><span>En yuksek</span><b id="statTop">-</b></div>
+      <div class="stat"><span>Kapsam</span><b id="statCoverage">-</b></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3>Diff Siralamasi</h3>
+    <div class="chart-wrap"><canvas id="barChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <h3>Izlenme Egrileri</h3>
+    <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="table-head">
+      <div></div><div>Icerik</div><div style="text-align:right">Diff</div><div style="text-align:right">Baseline</div><div style="text-align:right">Toplam</div>
+    </div>
+    <div id="results" class="loading">Veri yukleniyor</div>
+  </div>
+</div>
+
+<script>
+const RAW_DATA_URL = "https://raw.githubusercontent.com/keremalatepe/ig-tracker/main/dashboard_data.json";
+const DATA_URLS = (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname.endsWith("github.io"))
+  ? ["dashboard_data.json", RAW_DATA_URL]
+  : [RAW_DATA_URL, "dashboard_data.json"];
+
+const fmt = new Intl.NumberFormat("tr-TR");
+const MS_DAY = 86400000;
+let DATA = null;
+let barChart = null;
+let lineChart = null;
+
+const state = {
+  days: 3,
+  limit: 25,
+  curveCount: 5,
+  minDiff: null,
+  maxDiff: null,
+  type: "video",
+};
+
+function fmtNum(n) {
+  return n == null || Number.isNaN(n) ? "-" : fmt.format(Math.round(n));
+}
+
+function fmtDate(iso) {
+  if (!iso) return "-";
+  return parseDate(iso).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return "-";
+  return parseDate(iso).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function parseDate(iso) {
+  if (iso instanceof Date) return iso;
+  return new Date(String(iso || "").replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+}
+
+function esc(s) {
+  return String(s || "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
+}
+
+function hasMeaningfulAccountData() {
+  const series = DATA && DATA.account_insights_timeseries || [];
+  const heatmap = DATA && DATA.online_followers_heatmap || [];
+  if (heatmap.length) return true;
+  const metricNames = new Set();
+  let daysWithData = 0;
+  for (const row of series) {
+    let hasDay = false;
+    for (const [k, v] of Object.entries(row || {})) {
+      if (k === "d" || v == null || v === 0) continue;
+      metricNames.add(k);
+      hasDay = true;
+    }
+    if (hasDay) daysWithData += 1;
+  }
+  return metricNames.size >= 2 || daysWithData >= 2;
+}
+
+function renderChrome() {
+  const profile = (DATA && DATA.profile) || {};
+  let avatarHtml = profile.username ? `<span>${esc(profile.username[0].toUpperCase())}</span>` : "<span>?</span>";
+  if (profile.profile_picture_url) {
+    avatarHtml = `<img src="${esc(profile.profile_picture_url)}" alt="" onerror="this.style.display='none'" />`;
+  }
+
+  const tabs = [
+    { label: "Özet", href: "index.html?tab=summary" },
+    { label: "Diff", href: "views.html", active: true },
+    { label: "İçerikler", href: "index.html?tab=posts" },
+    { label: "Reels", href: "index.html?tab=reels" },
+    { label: "Stories", href: "index.html?tab=stories" },
+    ...(hasMeaningfulAccountData() ? [{ label: "Hesap", href: "index.html?tab=account" }] : []),
+    { label: "Demografik", href: "index.html?tab=demo" },
+    { label: "Çalışmalar", href: "index.html?tab=runs" },
+  ];
+
+  document.getElementById("site-chrome").innerHTML = `
+    <div class="hdr">
+      <div class="hdr-avatar">${avatarHtml}</div>
+      <div class="hdr-info">
+        <p class="hdr-name">${esc(profile.name || profile.username || "-")}</p>
+        <p class="hdr-user">@${esc(profile.username || "-")}</p>
+        <div class="hdr-stats">
+          <span><b>${fmtNum(profile.followers_count)}</b> takipçi</span>
+          <span><b>${fmtNum(profile.media_count)}</b> içerik</span>
+          ${profile.follows_count != null ? `<span><b>${fmtNum(profile.follows_count)}</b> takip</span>` : ""}
+        </div>
+      </div>
+      <button class="refresh-btn" onclick="load()">↻ Yenile</button>
+    </div>
+    <div class="tabs">
+      ${tabs.map(tab => `<a class="tab ${tab.active ? "active" : ""}" href="${tab.href}">${tab.label}</a>`).join("")}
+    </div>`;
+}
+
+function parseAmount(value, suffix) {
+  if (value == null || value === "") return null;
+  const raw = String(value).trim().toLocaleLowerCase("tr-TR");
+  const mult = /(k|bin)\b/.test(raw) || /(k|bin)\b/.test(String(suffix || "")) ? 1000 : 1;
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return null;
+  return Number(digits) * mult;
+}
+
+function readControls() {
+  state.days = clampInt(document.getElementById("days").value, 1, 90, 3);
+  state.limit = clampInt(document.getElementById("limit").value, 1, 500, 25);
+  state.curveCount = clampInt(document.getElementById("curveCount").value, 1, 50, 5);
+  state.minDiff = parseAmount(document.getElementById("minDiff").value);
+  state.maxDiff = parseAmount(document.getElementById("maxDiff").value);
+  state.type = document.getElementById("typeFilter").value;
+}
+
+function clampInt(value, min, max, fallback) {
+  const n = parseInt(value, 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function getViewHistory(post) {
+  const rows = post.view_history && post.view_history.length
+    ? post.view_history.map(x => Array.isArray(x) ? { t: x[0], v: x[1] } : { t: x.t, v: x.v })
+    : (post.history || []).map(x => ({ t: x.t, v: x.views }));
+  return rows
+    .map(x => ({ t: parseDate(x.t), iso: x.t, v: Number(x.v) }))
+    .filter(x => Number.isFinite(x.v) && !Number.isNaN(x.t.getTime()))
+    .sort((a, b) => a.t - b.t);
+}
+
+function isWantedType(post) {
+  if (state.type === "all") return true;
+  if (state.type === "reels") return post.product_type === "REELS";
+  return post.type === "VIDEO" || post.product_type === "REELS";
+}
+
+function computeRows() {
+  const generated = DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
+  const cutoff = new Date(generated.getTime() - state.days * MS_DAY);
+  const rows = [];
+
+  for (const post of DATA.posts || []) {
+    if (!isWantedType(post)) continue;
+    const history = getViewHistory(post);
+    const latestFromHistory = history[history.length - 1];
+    const latestValue = Number.isFinite(Number(post.latest && post.latest.views))
+      ? Number(post.latest.views)
+      : latestFromHistory && latestFromHistory.v;
+    if (!Number.isFinite(latestValue)) continue;
+
+    const postedAt = post.posted_at ? parseDate(post.posted_at) : null;
+    let baseline = null;
+    let baselineAt = null;
+    let partial = false;
+
+    if (postedAt && !Number.isNaN(postedAt.getTime()) && postedAt > cutoff) {
+      baseline = 0;
+      baselineAt = postedAt;
+    } else {
+      const before = history.filter(x => x.t <= cutoff).pop();
+      if (before) {
+        baseline = before.v;
+        baselineAt = before.t;
+      } else if (history.length) {
+        baseline = history[0].v;
+        baselineAt = history[0].t;
+        partial = true;
+      }
+    }
+
+    if (baseline == null) continue;
+    const diff = Math.max(0, latestValue - baseline);
+    if (state.minDiff != null && diff < state.minDiff) continue;
+    if (state.maxDiff != null && diff > state.maxDiff) continue;
+
+    rows.push({ post, diff, latestValue, baseline, baselineAt, partial, cutoff });
+  }
+
+  rows.sort((a, b) => b.diff - a.diff);
+  return rows;
+}
+
+function render() {
+  if (!DATA) return;
+  readControls();
+  const allRows = computeRows();
+  const rows = allRows.slice(0, state.limit);
+  const sum = allRows.reduce((acc, row) => acc + row.diff, 0);
+  const partials = allRows.filter(row => row.partial).length;
+
+  document.getElementById("statCount").textContent = fmtNum(allRows.length);
+  document.getElementById("statSum").textContent = fmtNum(sum);
+  document.getElementById("statTop").textContent = fmtNum(allRows[0] && allRows[0].diff);
+  document.getElementById("statCoverage").textContent = partials ? `${fmtNum(allRows.length - partials)}/${fmtNum(allRows.length)}` : "Tam";
+
+  renderBarChart(rows);
+  renderLineChart(rows.slice(0, state.curveCount));
+  document.getElementById("results").className = "";
+  document.getElementById("results").innerHTML = rows.length
+    ? rows.map(renderRow).join("")
+    : '<div class="empty">Eslesen icerik bulunamadi.</div>';
+}
+
+function renderBarChart(rows) {
+  const ctx = document.getElementById("barChart");
+  if (barChart) barChart.destroy();
+  barChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: rows.map((row, i) => `#${i + 1}`),
+      datasets: [{
+        label: "Diff izlenme",
+        data: rows.map(row => row.diff),
+        backgroundColor: rows.map((_, i) => i % 3 === 0 ? "#168a5b" : i % 3 === 1 ? "#2563eb" : "#b45309"),
+        borderRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => rows[items[0].dataIndex] ? rows[items[0].dataIndex].post.caption_short || "Icerik" : "",
+            label: item => `Diff: ${fmtNum(item.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function colorForIndex(index) {
+  const colors = ["#168a5b", "#2563eb", "#b45309", "#dc2626", "#7c3aed", "#0891b2", "#ca8a04", "#be185d", "#0f766e", "#6d28d9", "#1d4ed8", "#15803d"];
+  return colors[index % colors.length];
+}
+
+function buildCurvePoints(row) {
+  const history = getViewHistory(row.post);
+  const startAt = row.baselineAt && row.baselineAt > row.cutoff ? row.baselineAt : row.cutoff;
+  const points = [{ x: startAt, y: 0 }];
+  for (const item of history) {
+    if (item.t < startAt) continue;
+    points.push({ x: item.t, y: Math.max(0, item.v - row.baseline) });
+  }
+
+  if (points.length === 1) {
+    points.push({ x: DATA.generated_at ? parseDate(DATA.generated_at) : new Date(), y: row.diff });
+  }
+  return points;
+}
+
+function renderLineChart(rows) {
+  const ctx = document.getElementById("lineChart");
+  if (lineChart) lineChart.destroy();
+
+  const datasets = rows.map((row, index) => ({
+    label: `#${index + 1} ${row.post.caption_short || "Icerik"}`,
+    data: buildCurvePoints(row),
+    borderColor: colorForIndex(index),
+    backgroundColor: "transparent",
+    tension: 0.2,
+    pointRadius: 0,
+    pointHoverRadius: 3,
+    borderWidth: 2
+  }));
+
+  lineChart = new Chart(ctx, {
+    type: "line",
+    data: { datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false },
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: {
+            boxWidth: 10,
+            boxHeight: 10,
+            font: { size: 10 },
+            generateLabels(chart) {
+              const labels = Chart.defaults.plugins.legend.labels.generateLabels(chart);
+              return labels.map(label => ({ ...label, text: label.text.slice(0, 48) }));
+            }
+          }
+        },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              return items[0] ? fmtDate(items[0].parsed.x) : "";
+            },
+            label(item) {
+              return `${item.dataset.label}: ${fmtNum(item.parsed.y)}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          type: "time",
+          time: { unit: state.days <= 3 ? "hour" : state.days <= 14 ? "day" : "week" },
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 }
+        },
+        y: {
+          ticks: { font: { size: 10 } }
+        }
+      }
+    }
+  });
+}
+
+function renderRow(row) {
+  const p = row.post;
+  const href = p.permalink || "#";
+  return `
+    <a class="row" href="${esc(href)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">
+      ${p.thumbnail ? `<img class="thumb" src="${esc(p.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="thumb"></div>'}
+      <div class="title">
+        <div class="caption">${esc(p.caption_short || "Icerik")}</div>
+        <div class="meta">${esc(p.product_type || p.type || "")} · ${fmtDate(p.posted_at)}</div>
+        ${row.partial ? '<span class="flag">eksik baseline</span>' : ""}
+      </div>
+      <div class="metric diff"><b>+${fmtNum(row.diff)}</b><span>${state.days} gun</span></div>
+      <div class="metric base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
+      <div class="metric total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
+    </a>`;
+}
+
+async function fetchJson() {
+  let lastError = null;
+  for (const url of DATA_URLS) {
+    try {
+      const res = await fetch(url + (url.includes("?") ? "&" : "?") + "t=" + Date.now());
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error("Veri alinamadi");
+}
+
+async function load() {
+  try {
+    DATA = await fetchJson();
+    renderChrome();
+    document.getElementById("dataUpdated").textContent = DATA.generated_at ? fmtDateTime(DATA.generated_at) : "-";
+    render();
+  } catch (err) {
+    document.getElementById("site-chrome").innerHTML = '<div class="loading">Veri yukleniyor</div>';
+    document.getElementById("results").className = "";
+    document.getElementById("results").innerHTML = `<div class="empty">Veri yuklenemedi: ${esc(err.message)}</div>`;
+    document.getElementById("dataUpdated").textContent = "-";
+  }
+}
+
+for (const id of ["days", "limit", "curveCount", "minDiff", "maxDiff", "typeFilter"]) {
+  document.getElementById(id).addEventListener("change", render);
+  document.getElementById(id).addEventListener("input", render);
+}
+
+load();
+</script>
+</body>
+</html>

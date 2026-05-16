@@ -34,6 +34,7 @@ Format:
                  follows, profile_visits, total_interactions,
                  ig_reels_avg_watch_time },
       "history": [ {"t": "ISO", "views": N, "reach": N, ...} ]  // sadece son 30 nokta
+      "view_history": [["ISO", views], ...]  // diff sayfası için kompakt
     }
   ],
   "stories": [...]
@@ -51,6 +52,7 @@ OUTPUT_PATH = os.environ.get("DASHBOARD_JSON", "dashboard_data.json")
 # Limitler
 POSTS_LIMIT = 500                 # Son N post
 POST_HISTORY_POINTS = 30          # Her post için en son N snapshot
+POST_VIEW_HISTORY_DAYS = 90       # Diff sayfası için kompakt izlenme geçmişi
 FOLLOWER_LOOKBACK_DAYS = 365      # Takipçi serisi için maksimum
 ACCOUNT_LOOKBACK_DAYS = 365
 CAPTION_MAX = 150
@@ -300,6 +302,17 @@ def get_posts(conn: sqlite3.Connection, limit: int = POSTS_LIMIT) -> list:
             for h in reversed(history_rows)
         ]
 
+        view_cutoff = (datetime.now(timezone.utc) - timedelta(days=POST_VIEW_HISTORY_DAYS)).isoformat()
+        view_history_rows = conn.execute("""
+            SELECT fetched_at, views
+            FROM post_snapshots
+            WHERE post_id = ?
+              AND fetched_at >= ?
+              AND views IS NOT NULL
+            ORDER BY id
+        """, (post_id, view_cutoff)).fetchall()
+        view_history = [[vh[0], vh[1]] for vh in view_history_rows]
+
         short_caption = (caption or "")
         if len(short_caption) > CAPTION_MAX:
             short_caption = short_caption[:CAPTION_MAX].rstrip() + "…"
@@ -329,6 +342,7 @@ def get_posts(conn: sqlite3.Connection, limit: int = POSTS_LIMIT) -> list:
                 "fetched_at": latest.get("fetched_at"),
             },
             "history": history,
+            "view_history": view_history,
         })
     return posts_out
 
