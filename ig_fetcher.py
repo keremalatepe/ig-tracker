@@ -728,6 +728,51 @@ def upsert_follower_daily(conn: sqlite3.Connection, date: str, followers_count: 
     """, (date, followers_count, followers_delta, follows, unfollows, source))
 
 
+def spread_unfollows(start: str, end: str, total: int, overrides: dict[str, int] | None = None) -> dict[str, int]:
+    """Spread known unfollow totals across dates, keeping explicit high days fixed."""
+    from datetime import date as date_cls
+
+    overrides = overrides or {}
+    start_date = date_cls.fromisoformat(start)
+    end_date = date_cls.fromisoformat(end)
+    dates = []
+    current = start_date
+    while current <= end_date:
+        dates.append(str(current))
+        current += timedelta(days=1)
+
+    remaining_dates = [d for d in dates if d not in overrides]
+    remaining_total = total - sum(overrides.values())
+    if remaining_total < 0 or not remaining_dates:
+        return {d: overrides.get(d, 0) for d in dates}
+
+    base, extra = divmod(remaining_total, len(remaining_dates))
+    out = {d: overrides.get(d, 0) for d in dates}
+    for i, date_str in enumerate(remaining_dates):
+        out[date_str] = base + (1 if i < extra else 0)
+    return out
+
+
+def manual_unfollow_estimates() -> dict[str, int]:
+    """Manual estimates from Instagram app screenshots/summary when API lacks unfollows."""
+    estimates: dict[str, int] = {}
+    ranges = [
+        ("2026-02-15", "2026-02-28", 41, {}),
+        ("2026-03-01", "2026-03-31", 224, {"2026-03-29": 19}),
+        ("2026-04-01", "2026-04-30", 325, {
+            "2026-04-04": 22,
+            "2026-04-09": 16,
+            "2026-04-12": 16,
+            "2026-04-18": 16,
+            "2026-04-20": 18,
+        }),
+        ("2026-05-01", "2026-05-09", 107, {}),
+    ]
+    for start, end, total, overrides in ranges:
+        estimates.update(spread_unfollows(start, end, total, overrides))
+    return estimates
+
+
 def insert_online_followers(conn: sqlite3.Connection, fetched_at: str, online: dict):
     for end_time, hours_dict in online.items():
         period_date = end_time.split("T")[0] if end_time else fetched_at[:10]
@@ -903,7 +948,20 @@ def run_backfill_followers(fetcher: InstagramFetcher, conn: sqlite3.Connection, 
     if not net_delta_dict:
         net_delta_dict = fallback_delta_dict
         if net_delta_dict:
-            log.warning("  follows_and_unfollows günlük net vermedi; follower_count metriğiyle devam ediliyor.")
+            manual_unfollows = manual_unfollow_estimates()
+            net_delta_dict = {}
+            manual_total = 0
+            for date_str, follows in fallback_delta_dict.items():
+                unfollows = manual_unfollows.get(date_str, 0)
+                manual_total += unfollows
+                net_delta_dict[date_str] = follows - unfollows
+                follow_unfollow_by_date[date_str] = {
+                    "date": date_str,
+                    "follows": follows,
+                    "unfollows": unfollows,
+                }
+            log.warning("  follows_and_unfollows günlük net vermedi; "
+                        f"manuel unfollow tahmini kullanılıyor ({manual_total} unfollows).")
 
     if not net_delta_dict:
         # API'den veri gelmedi; sadece snapshot'ları aktar
