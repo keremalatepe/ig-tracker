@@ -2,15 +2,14 @@ name: Instagram Data Fetcher
 
 on:
   schedule:
-<<<<<<< HEAD
     # Her saatin 17. dakikasında çalışır (queue daha az yoğun, geç başlama az olur)
-    - cron: '17 * * * *'
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Çalışma modu'
+        description: "Çalışma modu"
         required: false
-        default: 'auto'
+        default: "auto"
         type: choice
         options:
           - auto
@@ -18,11 +17,6 @@ on:
           - daily
           - weekly
           - full
-=======
-    # Her saat başı çalışır (UTC)
-    - cron: '17 * * * *'
-  workflow_dispatch: # Manuel tetikleme butonu
->>>>>>> cd20191d5800eaed980c59eb806dd21c54f95675
 
 permissions:
   contents: write
@@ -43,7 +37,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
