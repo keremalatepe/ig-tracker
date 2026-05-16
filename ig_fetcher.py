@@ -240,43 +240,63 @@ class InstagramFetcher:
 
     # ── Post insights ──
     def fetch_media_insights(self, media_id: str, media_product_type: str) -> dict:
-        """Post veya reel için insights. media_product_type 'REELS' ise reels-özel metrikler eklenir."""
-        base_metrics = [
-            "reach", "saved", "shares", "likes", "comments",
-            "views", "total_interactions", "follows", "profile_visits", "profile_activity",
+        """Post veya reel için insights."""
+
+        post_metrics = [
+            "reach",
+            "saved",
+            "shares",
+            "likes",
+            "comments",
+            "views",
+            "total_interactions",
+            "follows",
+            "profile_visits",
+            "profile_activity",
         ]
-        reels_extra = [
+
+        reels_metrics = [
+            "reach",
+            "saved",
+            "shares",
+            "likes",
+            "comments",
+            "views",
+            "total_interactions",
             "ig_reels_avg_watch_time",
             "ig_reels_video_view_total_time",
             "clips_replays_count",
             "ig_reels_aggregated_all_plays_count",
         ]
 
-        metrics = base_metrics + (reels_extra if media_product_type == "REELS" else [])
+        if media_product_type == "REELS":
+            metrics = reels_metrics
+        else:
+            metrics = post_metrics
+
         data = self._get(
             f"{GRAPH_API_BASE}/{media_id}/insights",
             {"metric": ",".join(metrics)},
         )
 
-        if "error" in data:
-            # Bazı metrikler bu media tipinde mevcut olmayabilir; ana set ile tekrar dene
-            log.debug(f"  Insights ilk denemede hata ({media_id}); base metric ile tekrar deneniyor")
-            data = self._get(
-                f"{GRAPH_API_BASE}/{media_id}/insights",
-                {"metric": ",".join(base_metrics)},
-            )
-
         result = {}
+
         if "error" in data:
-            log.warning(f"  Insights alınamadı ({media_id}): {data['error'].get('message', '')}")
+            log.warning(
+                f" Insights alınamadı ({media_id}, type={media_product_type}): "
+                f"{data['error'].get('message', '')}"
+            )
             return result
 
         for item in data.get("data", []):
             name = item["name"]
             value = item["values"][0]["value"] if item.get("values") else 0
-            if isinstance(value, dict):  # bazı metrikler dict döner (örn breakdown'lı)
+
+            if isinstance(value, dict):
                 value = sum(v for v in value.values() if isinstance(v, (int, float)))
+
             result[name] = value
+
         return result
 
     # ── Stories ──
