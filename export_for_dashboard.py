@@ -275,16 +275,20 @@ def get_stories(conn: sqlite3.Connection) -> list:
     for r in rows:
         story_id, permalink, thumb, ts, first_seen = r
         snap = conn.execute("""
-            SELECT reach, replies, taps_forward, taps_back, exits, views, total_interactions
+            SELECT reach, replies, views, total_interactions, navigation
             FROM story_snapshots
             WHERE story_id = ?
             ORDER BY id DESC LIMIT 1
         """, (story_id,)).fetchone()
         snap_data = {}
         if snap:
-            snap_data = {"reach": snap[0], "replies": snap[1], "taps_forward": snap[2],
-                         "taps_back": snap[3], "exits": snap[4], "views": snap[5],
-                         "total_interactions": snap[6]}
+            snap_data = {
+                "reach": snap[0],
+                "replies": snap[1],
+                "views": snap[2],
+                "total_interactions": snap[3],
+                "navigation": snap[4],
+            }
         out.append({
             "id": story_id,
             "permalink": permalink,

@@ -132,11 +132,13 @@ def migrate(conn: sqlite3.Connection):
         exits INTEGER,
         views INTEGER,
         total_interactions INTEGER,
+        navigation INTEGER,
         FOREIGN KEY(story_id) REFERENCES stories(story_id)
     )
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_story_snapshots_story ON story_snapshots(story_id)")
-
+    log.info("story_snapshots: yeni kolonlar...")
+    add_column_if_missing(cur, "story_snapshots", "navigation", "INTEGER")
     log.info("fetch_runs tablosu...")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS fetch_runs (

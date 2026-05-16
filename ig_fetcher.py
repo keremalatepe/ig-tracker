@@ -265,8 +265,6 @@ class InstagramFetcher:
             "total_interactions",
             "ig_reels_avg_watch_time",
             "ig_reels_video_view_total_time",
-            "clips_replays_count",
-            "ig_reels_aggregated_all_plays_count",
         ]
 
         if media_product_type == "REELS":
@@ -306,7 +304,7 @@ class InstagramFetcher:
         return data.get("data", []) if "error" not in data else []
 
     def fetch_story_insights(self, story_id: str) -> dict:
-        metrics = "reach,replies,taps_forward,taps_back,exits,views,total_interactions"
+        metrics = "reach,replies,views,total_interactions,navigation,shares,likes,comments,saved,follows,profile_visits,profile_activity"
         data = self._get(
             f"{GRAPH_API_BASE}/{story_id}/insights",
             {"metric": metrics},
@@ -510,19 +508,18 @@ def upsert_story(conn: sqlite3.Connection, story: dict, first_seen: str):
 
 def insert_story_snapshot(conn: sqlite3.Connection, fetched_at: str, story_id: str, insights: dict):
     conn.execute("""
-    INSERT INTO story_snapshots (
-        fetched_at, story_id, reach, replies, taps_forward,
-        taps_back, exits, views, total_interactions
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO story_snapshots (
+            fetched_at, story_id,
+            reach, replies, views, total_interactions, navigation
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
     """, (
-        fetched_at, story_id,
+        fetched_at,
+        story_id,
         insights.get("reach"),
         insights.get("replies"),
-        insights.get("taps_forward"),
-        insights.get("taps_back"),
-        insights.get("exits"),
         insights.get("views"),
         insights.get("total_interactions"),
+        insights.get("navigation"),
     ))
 
 
