@@ -141,6 +141,24 @@
     color: var(--text);
     font-size: 13px;
   }
+  .top-update {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  .top-update b {
+    color: var(--text);
+    font-size: 13px;
+  }
+  .top-update span:last-child { white-space: nowrap; }
   .stats {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -371,9 +389,38 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
   @media (max-width: 680px) {
-    .hdr { align-items: flex-start; flex-wrap: wrap; }
-    .refresh-btn { margin-left: 68px; }
+    .hdr {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      align-items: flex-start;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 12px;
+    }
+    .hdr-info { min-width: 0; }
+    .hdr-name { font-size: 16px; }
+    .hdr-stats {
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      font-size: 12px;
+    }
+    .hdr-stats b { font-size: 14px; }
+    .refresh-btn {
+      grid-column: 2;
+      justify-self: start;
+      margin-left: 0;
+      padding: 6px 10px;
+    }
+    .tabs { scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
     .fields { grid-template-columns: 1fr; }
+    .top-update {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 11px;
+    }
+    .top-update span:last-child { white-space: normal; }
     .table-head { display: none; }
     .row {
       grid-template-columns: 52px minmax(0, 1fr) 94px;
@@ -428,7 +475,6 @@
         </select>
       </div>
     </div>
-    <div class="info-note">Son veri guncelleme: <b id="dataUpdated">-</b></div>
   </div>
 
   <div class="panel">
@@ -528,6 +574,8 @@ function hasMeaningfulAccountData() {
 
 function renderChrome() {
   const profile = (DATA && DATA.profile) || {};
+  const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "-";
+  const lastRun = DATA && DATA.recent_runs && DATA.recent_runs[0];
   let avatarHtml = profile.username ? `<span>${esc(profile.username[0].toUpperCase())}</span>` : "<span>?</span>";
   if (profile.profile_picture_url) {
     avatarHtml = `<img src="${esc(profile.profile_picture_url)}" alt="" onerror="this.style.display='none'" />`;
@@ -560,6 +608,10 @@ function renderChrome() {
     </div>
     <div class="tabs">
       ${tabs.map(tab => `<a class="tab ${tab.active ? "active" : ""}" href="${tab.href}">${tab.label}</a>`).join("")}
+    </div>
+    <div class="top-update">
+      <span>Son guncelleme: <b>${updated}</b></span>
+      ${lastRun ? `<span>${esc(lastRun.mode || "-")} · <b style="color:${lastRun.status==='success'?'#168a5b':'#dc2626'}">${esc(lastRun.status || "-")}</b></span>` : ""}
     </div>`;
 }
 
@@ -929,14 +981,12 @@ async function load() {
   try {
     DATA = await fetchJson();
     renderChrome();
-    document.getElementById("dataUpdated").textContent = DATA.generated_at ? fmtDateTime(DATA.generated_at) : "-";
     render();
     if (requestedPost) setTimeout(() => openPostDetail(requestedPost), 0);
   } catch (err) {
     document.getElementById("site-chrome").innerHTML = '<div class="loading">Veri yukleniyor</div>';
     document.getElementById("results").className = "";
     document.getElementById("results").innerHTML = `<div class="empty">Veri yuklenemedi: ${esc(err.message)}</div>`;
-    document.getElementById("dataUpdated").textContent = "-";
   }
 }
 

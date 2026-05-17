@@ -195,6 +195,13 @@
   @keyframes spin { to { transform: rotate(360deg); } }
 
   .footer-info { text-align: center; font-size: 11px; color: #aaa; margin: 16px 0 8px; }
+  .top-update {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    border: 1px solid #f0f0f0; background: #fff; border-radius: 10px;
+    padding: 8px 10px; margin: 0 0 12px; color: #777; font-size: 12px;
+  }
+  .top-update b { color: #222; font-size: 13px; }
+  .top-update span:last-child { white-space: nowrap; }
   a { color: #6d28d9; text-decoration: none; }
   a:hover { text-decoration: underline; }
 
@@ -211,6 +218,95 @@
   .story-stats { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
   .story-stat { font-size: 10px; color: #555; }
   .story-stat b { color: #1a1a1a; }
+
+  @media (max-width: 680px) {
+    body { overflow-x: hidden; }
+    .container { width: 100%; padding: 8px; overflow-x: hidden; }
+    .hdr {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      align-items: flex-start;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 12px;
+    }
+    .hdr-info { min-width: 0; }
+    .hdr-name { font-size: 16px; }
+    .hdr-stats {
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      font-size: 12px;
+    }
+    .hdr-stats b { font-size: 14px; }
+    .refresh-btn {
+      grid-column: 2;
+      justify-self: start;
+      margin-left: 0;
+      padding: 6px 10px;
+    }
+    .tabs { margin-bottom: 10px; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 8px 14px; }
+    .card {
+      border-radius: 10px;
+      padding: 12px;
+      overflow: hidden;
+    }
+    .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi { min-width: 0; padding: 9px; }
+    .kpi-value { font-size: 19px; overflow-wrap: anywhere; }
+    .range-sel button { padding: 5px 9px; }
+    .metric-btn { padding: 5px 9px; }
+    .sort-bar {
+      flex-wrap: wrap;
+      overflow-x: visible;
+      padding-bottom: 0;
+    }
+    .chart-wrap { height: 220px; min-width: 0; }
+    .post-item {
+      display: grid;
+      grid-template-columns: 56px minmax(0, 1fr);
+      align-items: start;
+    }
+    .post-thumb {
+      grid-row: 1 / span 2;
+      width: 56px;
+      height: 56px;
+    }
+    .post-meta { min-width: 0; }
+    .post-stats {
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      width: 100%;
+      gap: 6px;
+      text-align: left;
+      padding-top: 6px;
+      border-top: 1px solid #f3f4f6;
+    }
+    .post-stat {
+      min-width: 0;
+      text-align: left;
+      white-space: normal;
+    }
+    .post-stat b {
+      font-size: 12px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .modal { padding: 14px; }
+    .detail-row {
+      grid-template-columns: minmax(78px, 1.2fr) repeat(4, minmax(44px, 0.7fr));
+      gap: 5px;
+      font-size: 11px;
+    }
+    .top-update {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 11px;
+    }
+    .top-update span:last-child { white-space: normal; }
+  }
 </style>
 </head>
 <body>
@@ -374,11 +470,11 @@ function render() {
       <a class="tab" href="views.html">Diff</a>
       ${tabs.filter(t => t.id !== 'summary').map(t => `<button class="tab ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`).join("")}
     </div>
-    ${tabs.map(t => `<div class="pane ${activeTab===t.id?'active':''}" id="pane-${t.id}"></div>`).join("")}
-    <p class="footer-info">
-      Son güncelleme: ${updated}
-      ${lastRun ? ` · ${lastRun.mode} · <span style="color:${lastRun.status==='success'?'#16a34a':'#dc2626'}">${lastRun.status}</span>` : ""}
-    </p>`;
+    <div class="top-update">
+      <span>Son güncelleme: <b>${updated}</b></span>
+      ${lastRun ? `<span>${lastRun.mode} · <b style="color:${lastRun.status==='success'?'#16a34a':'#dc2626'}">${lastRun.status}</b></span>` : ""}
+    </div>
+    ${tabs.map(t => `<div class="pane ${activeTab===t.id?'active':''}" id="pane-${t.id}"></div>`).join("")}`;
 
   renderPane(activeTab);
 }
