@@ -610,7 +610,7 @@ function renderChrome() {
       ${tabs.map(tab => `<a class="tab ${tab.active ? "active" : ""}" href="${tab.href}">${tab.label}</a>`).join("")}
     </div>
     <div class="top-update">
-      <span>Son guncelleme: <b>${updated}</b></span>
+      <span>Son güncelleme: <b>${updated}</b></span>
       ${lastRun ? `<span>${esc(lastRun.mode || "-")} · <b style="color:${lastRun.status==='success'?'#168a5b':'#dc2626'}">${esc(lastRun.status || "-")}</b></span>` : ""}
     </div>`;
 }
