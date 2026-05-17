@@ -479,9 +479,8 @@ function drawFollowerChart() {
   const ctx = document.getElementById("chart-follower");
   if (!ctx) return;
 
-  // kısa aralıklarda saat:dakika, uzun aralıklarda sadece tarih göster
-  const showTime = followerRange <= 7;
-  const tooltipFmt = showTime ? "d MMM HH:mm" : "d MMM yyyy";
+  // Eksen sade kalır; tooltip her aralıkta saat bilgisini gösterir.
+  const tooltipFmt = "d MMM yyyy HH:mm";
   const tickUnit = followerRange <= 3 ? "hour" : followerRange <= 7 ? "day" : followerRange <= 90 ? "week" : "month";
 
   chartsByTab.follower = new Chart(ctx, {
@@ -509,9 +508,7 @@ function drawFollowerChart() {
       plugins: { legend: { display: false }, tooltip: { callbacks: {
         title: items => {
           const d = new Date(items[0].parsed.x);
-          return showTime
-            ? d.toLocaleString("tr-TR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" })
-            : d.toLocaleDateString("tr-TR", { day:"2-digit", month:"short", year:"numeric" });
+          return d.toLocaleString("tr-TR", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
         }
       }}},
       scales: {
