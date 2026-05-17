@@ -494,14 +494,18 @@ function drawFollowerChart() {
         backgroundColor: "rgba(131,58,180,0.1)",
         fill: true,
         tension: 0.25,
-        pointRadius: 0,
-        pointHoverRadius: 4,
+        pointRadius: followerRange <= 7 ? 2 : 0,
+        pointHitRadius: 18,
+        pointHoverRadius: 6,
+        pointHoverBorderWidth: 2,
         borderWidth: 2
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      hover: { mode: "nearest", axis: "x", intersect: false },
       plugins: { legend: { display: false }, tooltip: { callbacks: {
         title: items => {
           const d = new Date(items[0].parsed.x);
