@@ -141,6 +141,60 @@
     color: var(--text);
     font-size: 13px;
   }
+  .filter-panel {
+    padding: 0;
+  }
+  .filter-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px;
+    cursor: pointer;
+    list-style: none;
+  }
+  .filter-summary::-webkit-details-marker { display: none; }
+  .filter-summary::after {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-right: 2px solid var(--muted);
+    border-bottom: 2px solid var(--muted);
+    transform: rotate(45deg);
+    transition: transform 0.15s ease;
+    flex: 0 0 auto;
+  }
+  .filter-panel[open] .filter-summary::after {
+    transform: rotate(225deg);
+  }
+  .filter-summary-main {
+    min-width: 0;
+  }
+  .filter-summary-main b {
+    display: block;
+    font-size: 14px;
+    line-height: 1.2;
+  }
+  .filter-summary-main span {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .filter-summary-meta {
+    color: var(--muted);
+    font-size: 12px;
+    text-align: right;
+    min-width: 0;
+  }
+  .filter-body {
+    border-top: 1px solid var(--line);
+    padding: 12px;
+  }
+  .filter-body .fields {
+    margin-top: 0;
+  }
   .top-update {
     display: flex;
     align-items: center;
@@ -413,6 +467,16 @@
     }
     .tabs { scrollbar-width: none; }
     .tabs::-webkit-scrollbar { display: none; }
+    .filter-summary {
+      align-items: flex-start;
+      padding: 10px 12px;
+      flex-wrap: wrap;
+    }
+    .filter-summary-meta {
+      flex: 1 1 100%;
+      order: 3;
+      text-align: left;
+    }
     .fields { grid-template-columns: 1fr; }
     .top-update {
       align-items: flex-start;
@@ -440,67 +504,75 @@
 <body>
 <div class="container">
   <div id="site-chrome">
-    <div class="loading">Veri yukleniyor</div>
+    <div class="loading">Veri yükleniyor</div>
   </div>
 
-  <div class="panel">
-    <h3>Filtreler</h3>
+  <details class="panel filter-panel" id="filter-panel" open>
+    <summary class="filter-summary">
+      <span class="filter-summary-main">
+        <span>Filtreler</span>
+        <b>İzlenme artışı</b>
+      </span>
+      <span class="filter-summary-meta" id="filterSummaryMeta">3 gün · 25 sonuç · 5 eğri · Video</span>
+    </summary>
+    <div class="filter-body">
     <div class="fields">
       <div class="field">
-        <label for="days">Son gun</label>
+        <label for="days">Gün sayısı</label>
         <input id="days" type="number" min="1" max="90" step="1" value="3" />
       </div>
       <div class="field">
-        <label for="limit">Sonuc</label>
+        <label for="limit">Liste limiti</label>
         <input id="limit" type="number" min="1" max="500" step="1" value="25" />
       </div>
       <div class="field">
-        <label for="curveCount">Egride</label>
+        <label for="curveCount">Grafikteki içerik</label>
         <input id="curveCount" type="number" min="1" max="50" step="1" value="5" />
       </div>
       <div class="field">
-        <label for="minDiff">Min artis</label>
+        <label for="minDiff">Min. artış</label>
         <input id="minDiff" type="text" inputmode="numeric" placeholder="0" />
       </div>
       <div class="field">
-        <label for="maxDiff">Maks artis</label>
-        <input id="maxDiff" type="text" inputmode="numeric" placeholder="bos" />
+        <label for="maxDiff">Maks. artış</label>
+        <input id="maxDiff" type="text" inputmode="numeric" placeholder="Boş" />
       </div>
       <div class="field">
-        <label for="typeFilter">Tip</label>
+        <label for="typeFilter">İçerik tipi</label>
         <select id="typeFilter">
           <option value="video">Video</option>
           <option value="reels">Reels</option>
-          <option value="all">Tum icerik</option>
+          <option value="all">Tüm içerikler</option>
         </select>
       </div>
     </div>
-  </div>
+    </div>
+  </details>
 
   <div class="panel">
     <div class="stats">
-      <div class="stat"><span>Eslesen</span><b id="statCount">-</b></div>
-      <div class="stat"><span>Toplam diff</span><b id="statSum">-</b></div>
-      <div class="stat"><span>En yuksek</span><b id="statTop">-</b></div>
-      <div class="stat"><span>Kapsam</span><b id="statCoverage">-</b></div>
+      <div class="stat"><span>Eşleşen içerik</span><b id="statCount">-</b></div>
+      <div class="stat"><span>Toplam artış</span><b id="statSum">-</b></div>
+      <div class="stat"><span>En yüksek artış</span><b id="statTop">-</b></div>
+      <div class="stat"><span>Veri kapsamı</span><b id="statCoverage">-</b></div>
     </div>
   </div>
 
   <div class="panel">
-    <h3>Diff Siralamasi</h3>
+    <h3>En Çok İzlenme Artışı</h3>
     <div class="chart-wrap"><canvas id="barChart"></canvas></div>
   </div>
 
   <div class="panel">
-    <h3>Izlenme Egrileri</h3>
+    <h3>Seçili İçeriklerin İzlenme Artışı</h3>
     <div class="chart-wrap"><canvas id="lineChart"></canvas></div>
   </div>
 
   <div class="panel">
     <div class="table-head">
-      <div></div><div>Icerik</div><div style="text-align:right">Diff</div><div style="text-align:right">Baseline</div><div style="text-align:right">Toplam</div>
+      <div></div><div>İçerik</div><div style="text-align:right">Artış</div><div style="text-align:right">Başlangıç</div><div style="text-align:right">Toplam</div>
     </div>
-    <div id="results" class="loading">Veri yukleniyor</div>
+    <div id="results" class="loading">Veri yükleniyor</div>
   </div>
 </div>
 <div class="modal-bg" id="modal-bg" onclick="if(event.target===this) closeModal()">
@@ -631,12 +703,38 @@ function readControls() {
   state.minDiff = parseAmount(document.getElementById("minDiff").value);
   state.maxDiff = parseAmount(document.getElementById("maxDiff").value);
   state.type = document.getElementById("typeFilter").value;
+  updateFilterSummary();
 }
 
 function clampInt(value, min, max, fallback) {
   const n = parseInt(value, 10);
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+function labelForType(value) {
+  if (value === "all") return "Tüm içerikler";
+  if (value === "reels") return "Reels";
+  return "Video";
+}
+
+function updateFilterSummary() {
+  const el = document.getElementById("filterSummaryMeta");
+  if (!el) return;
+  el.textContent = `${state.days} gün · ${fmtNum(state.limit)} sonuç · ${fmtNum(state.curveCount)} eğri · ${labelForType(state.type)}`;
+}
+
+function initFilterPanel() {
+  const panel = document.getElementById("filter-panel");
+  if (!panel || !window.matchMedia) return;
+  const media = window.matchMedia("(max-width: 680px)");
+  const sync = event => {
+    if (event.matches) panel.removeAttribute("open");
+    else panel.setAttribute("open", "");
+  };
+  sync(media);
+  if (media.addEventListener) media.addEventListener("change", sync);
+  else if (media.addListener) media.addListener(sync);
 }
 
 function getViewHistory(post) {
@@ -719,7 +817,7 @@ function render() {
   document.getElementById("results").className = "";
   document.getElementById("results").innerHTML = rows.length
     ? rows.map(renderRow).join("")
-    : '<div class="empty">Eslesen icerik bulunamadi.</div>';
+    : '<div class="empty">Eşleşen içerik bulunamadı.</div>';
 }
 
 function renderBarChart(rows) {
@@ -730,7 +828,7 @@ function renderBarChart(rows) {
     data: {
       labels: rows.map((row, i) => `#${i + 1}`),
       datasets: [{
-        label: "Diff izlenme",
+        label: "İzlenme artışı",
         data: rows.map(row => row.diff),
         backgroundColor: rows.map((_, i) => i % 3 === 0 ? "#168a5b" : i % 3 === 1 ? "#2563eb" : "#b45309"),
         borderRadius: 5,
@@ -743,8 +841,8 @@ function renderBarChart(rows) {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            title: items => rows[items[0].dataIndex] ? rows[items[0].dataIndex].post.caption_short || "Icerik" : "",
-            label: item => `Diff: ${fmtNum(item.parsed.y)}`
+            title: items => rows[items[0].dataIndex] ? rows[items[0].dataIndex].post.caption_short || "İçerik" : "",
+            label: item => `Artış: ${fmtNum(item.parsed.y)}`
           }
         }
       },
@@ -781,7 +879,7 @@ function renderLineChart(rows) {
   if (lineChart) lineChart.destroy();
 
   const datasets = rows.map((row, index) => ({
-    label: `#${index + 1} ${row.post.caption_short || "Icerik"}`,
+    label: `#${index + 1} ${row.post.caption_short || "İçerik"}`,
     data: buildCurvePoints(row),
     borderColor: colorForIndex(index),
     backgroundColor: "transparent",
@@ -842,11 +940,11 @@ function renderRow(row) {
     <button class="row" type="button" onclick='openPostDetail(${JSON.stringify(p.id).replace(/'/g,"&#39;")})'>
       ${p.thumbnail ? `<img class="thumb" src="${esc(p.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="thumb"></div>'}
       <div class="title">
-        <div class="caption">${esc(p.caption_short || "Icerik")}</div>
+        <div class="caption">${esc(p.caption_short || "İçerik")}</div>
         <div class="meta">${esc(p.product_type || p.type || "")} · ${fmtDate(p.posted_at)}</div>
-        ${row.partial ? '<span class="flag">eksik baseline</span>' : ""}
+        ${row.partial ? '<span class="flag">eksik başlangıç</span>' : ""}
       </div>
-      <div class="metric diff"><b>+${fmtNum(row.diff)}</b><span>${state.days} gun</span></div>
+      <div class="metric diff"><b>+${fmtNum(row.diff)}</b><span>${state.days} gün</span></div>
       <div class="metric base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
       <div class="metric total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
     </button>`;
@@ -864,7 +962,7 @@ function renderSnapshotRows(post) {
   if (!rows.length) return '<div class="empty" style="padding:16px">Snapshot verisi yok.</div>';
   return `
     <div class="detail-table">
-      <div class="detail-row head"><span>Zaman</span><span>Izl.</span><span>Eris.</span><span>Begen.</span><span>Kayit</span></div>
+      <div class="detail-row head"><span>Zaman</span><span>İzl.</span><span>Eriş.</span><span>Beğen.</span><span>Kayıt</span></div>
       ${rows.map(row => `<div class="detail-row">
         <span>${fmtDateTime(row.t)}</span>
         <span>${fmtNum(row.views)}</span>
@@ -889,13 +987,13 @@ function openPostDetail(id) {
   const diffPoints = row ? buildCurvePoints(row) : [];
   const stats = [
     ["Toplam izlenme", fmtNum(row ? row.latestValue : latest.views)],
-    [`Son ${state.days} gun`, row ? `+${fmtNum(row.diff)}` : "-"],
-    ["Baseline", row ? fmtNum(row.baseline) : "-"],
-    ["Erisim", fmtNum(latest.reach)],
-    ["Begeni", fmtNum(latest.likes)],
+    [`Son ${state.days} gün artış`, row ? `+${fmtNum(row.diff)}` : "-"],
+    ["Başlangıç", row ? fmtNum(row.baseline) : "-"],
+    ["Erişim", fmtNum(latest.reach)],
+    ["Beğeni", fmtNum(latest.likes)],
     ["Yorum", fmtNum(latest.comments)],
-    ["Kayit", fmtNum(latest.saved)],
-    ["Paylasim", fmtNum(latest.shares)],
+    ["Kayıt", fmtNum(latest.saved)],
+    ["Paylaşım", fmtNum(latest.shares)],
     ["Takip", fmtNum(latest.follows)],
     ["Profil Z.", fmtNum(latest.profile_visits)],
   ];
@@ -906,22 +1004,22 @@ function openPostDetail(id) {
     <div class="modal-hdr">
       ${post.thumbnail ? `<img src="${esc(post.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : ""}
       <div style="flex:1;min-width:0">
-        <div class="flag">${esc(post.product_type || post.type || "Icerik")}</div>
-        <div class="detail-caption">${esc(post.caption_short || "Icerik")}</div>
+        <div class="flag">${esc(post.product_type || post.type || "İçerik")}</div>
+        <div class="detail-caption">${esc(post.caption_short || "İçerik")}</div>
         <div class="meta">${fmtDate(post.posted_at)}</div>
         <div class="detail-actions">
-          ${post.permalink ? `<a class="detail-link" href="${esc(post.permalink)}" target="_blank" rel="noopener">Instagram'da ac</a>` : ""}
+          ${post.permalink ? `<a class="detail-link" href="${esc(post.permalink)}" target="_blank" rel="noopener">Instagram'da aç</a>` : ""}
         </div>
       </div>
     </div>
     <div class="detail-grid">${renderDetailStats(stats)}</div>
     <div class="detail-section">
-      <h3>Izlenme Egrisi</h3>
-      <div class="detail-note">${row ? `${fmtNum(row.baseline)} → ${fmtNum(row.latestValue)} · son ${state.days} gun +${fmtNum(row.diff)}${row.partial ? " · eksik baseline" : ""}` : "Bu filtre icin diff hesabi yok."}</div>
+      <h3>İzlenme Gelişimi</h3>
+      <div class="detail-note">${row ? `${fmtNum(row.baseline)} → ${fmtNum(row.latestValue)} · son ${state.days} gün +${fmtNum(row.diff)}${row.partial ? " · eksik başlangıç verisi" : ""}` : "Bu filtre için artış hesabı yok."}</div>
       <div class="chart-wrap"><canvas id="detailChart"></canvas></div>
     </div>
     <div class="detail-section">
-      <h3>Son Olcumler</h3>
+      <h3>Son Ölçümler</h3>
       ${renderSnapshotRows(post)}
     </div>`;
 
@@ -936,7 +1034,7 @@ function openPostDetail(id) {
       data: {
         datasets: [
           { label: "Toplam izlenme", data: totalPoints, borderColor: "#2563eb", backgroundColor: "transparent", tension: 0.2, pointRadius: 0, borderWidth: 2 },
-          ...(diffPoints.length ? [{ label: `Son ${state.days} gun artis`, data: diffPoints, borderColor: "#168a5b", backgroundColor: "transparent", tension: 0.2, pointRadius: 0, borderWidth: 2, yAxisID: "y1" }] : []),
+          ...(diffPoints.length ? [{ label: `Son ${state.days} gün artış`, data: diffPoints, borderColor: "#168a5b", backgroundColor: "transparent", tension: 0.2, pointRadius: 0, borderWidth: 2, yAxisID: "y1" }] : []),
         ]
       },
       options: {
@@ -984,9 +1082,9 @@ async function load() {
     render();
     if (requestedPost) setTimeout(() => openPostDetail(requestedPost), 0);
   } catch (err) {
-    document.getElementById("site-chrome").innerHTML = '<div class="loading">Veri yukleniyor</div>';
+    document.getElementById("site-chrome").innerHTML = '<div class="loading">Veri yükleniyor</div>';
     document.getElementById("results").className = "";
-    document.getElementById("results").innerHTML = `<div class="empty">Veri yuklenemedi: ${esc(err.message)}</div>`;
+    document.getElementById("results").innerHTML = `<div class="empty">Veri yüklenemedi: ${esc(err.message)}</div>`;
   }
 }
 
@@ -995,6 +1093,7 @@ for (const id of ["days", "limit", "curveCount", "minDiff", "maxDiff", "typeFilt
   document.getElementById(id).addEventListener("input", render);
 }
 
+initFilterPanel();
 load();
 </script>
 </body>
