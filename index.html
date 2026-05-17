@@ -324,8 +324,10 @@ const DATA_URLS = (location.hostname === "localhost" || location.hostname === "1
 
 const fmt = new Intl.NumberFormat("tr-TR");
 const fmtCompact = new Intl.NumberFormat("tr-TR", { notation: "compact", maximumFractionDigits: 1 });
+const fmtPercent = new Intl.NumberFormat("tr-TR", { style: "percent", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const fmtNum = n => (n == null || isNaN(n)) ? "—" : fmt.format(Math.round(n));
 const fmtShort = n => (n == null || isNaN(n)) ? "—" : fmtCompact.format(Math.round(n));
+const fmtRate = n => (n == null || !Number.isFinite(n)) ? "—" : fmtPercent.format(n);
 const fmtSec = ms => ms == null ? "—" : (ms / 1000).toFixed(1) + "s";
 const fmtDate = iso => {
   if (!iso) return "—";
@@ -359,6 +361,25 @@ const ACCOUNT_METRIC_LABELS = {
 const ACCOUNT_METRIC_COLORS = {
   reach: "#833ab4", profile_views: "#fd1d1d", total_interactions: "#fcb045",
   accounts_engaged: "#0ea5e9", website_clicks: "#10b981", follower_count: "#6366f1",
+};
+
+const RATE_SORTS = new Set(["like_rate", "comment_rate", "save_rate", "share_rate", "engagement_rate"]);
+const POST_SORT_LABELS = {
+  views: "İzlenme",
+  reach: "Erişim",
+  likes: "Beğeni",
+  saved: "Kayıt",
+  shares: "Paylaşım",
+  follows: "Takip",
+  profile_visits: "Profil Z.",
+  comments: "Yorum",
+  ig_reels_avg_watch_time: "Ort. İzl.",
+  like_rate: "Beğeni Oranı",
+  comment_rate: "Yorum Oranı",
+  save_rate: "Kayıt Oranı",
+  share_rate: "Paylaşım Oranı",
+  engagement_rate: "Toplam Etkileşim Oranı",
+  posted_at: "Tarih",
 };
 
 const allowedTabs = new Set(["summary", "posts", "reels", "stories", "account", "demo", "runs"]);
@@ -431,6 +452,39 @@ function badgeForType(pt, mt) {
   if (mt === "CAROUSEL_ALBUM") return '<span class="badge badge-carousel">CAROUSEL</span>';
   if (mt === "VIDEO") return '<span class="badge badge-feed">VIDEO</span>';
   return '<span class="badge badge-feed">FEED</span>';
+}
+
+function metricNumber(post, key) {
+  const value = post && post.latest ? Number(post.latest[key]) : NaN;
+  return Number.isFinite(value) ? value : 0;
+}
+
+function totalInteractions(latest) {
+  const provided = Number(latest && latest.total_interactions);
+  if (latest && latest.total_interactions != null && Number.isFinite(provided)) return provided;
+  return ["likes", "comments", "saved", "shares"]
+    .reduce((sum, key) => sum + (Number.isFinite(Number(latest && latest[key])) ? Number(latest[key]) : 0), 0);
+}
+
+function postRate(post, key) {
+  const latest = (post && post.latest) || {};
+  const views = Number(latest.views);
+  if (!Number.isFinite(views) || views <= 0) return 0;
+  if (key === "like_rate") return metricNumber(post, "likes") / views;
+  if (key === "comment_rate") return metricNumber(post, "comments") / views;
+  if (key === "save_rate") return metricNumber(post, "saved") / views;
+  if (key === "share_rate") return metricNumber(post, "shares") / views;
+  if (key === "engagement_rate") return totalInteractions(latest) / views;
+  return 0;
+}
+
+function postSortValue(post, key) {
+  return RATE_SORTS.has(key) ? postRate(post, key) : metricNumber(post, key);
+}
+
+function rateSortBadge(post) {
+  if (!RATE_SORTS.has(postSort)) return "";
+  return `<span class="badge">${POST_SORT_LABELS[postSort]} ${fmtRate(postRate(post, postSort))}</span>`;
 }
 
 function render() {
@@ -683,7 +737,7 @@ function renderPostItem(p) {
       <div class="post-meta">
         <div class="post-caption">${(p.caption_short || "").replace(/</g, "&lt;")}</div>
         <div class="post-date">${fmtDate(p.posted_at)}</div>
-        <div class="post-badges">${badgeForType(p.product_type, p.type)}${l.follows ? `<span class="badge">+${fmtNum(l.follows)} takip</span>` : ""}</div>
+        <div class="post-badges">${badgeForType(p.product_type, p.type)}${l.follows ? `<span class="badge">+${fmtNum(l.follows)} takip</span>` : ""}${rateSortBadge(p)}</div>
       </div>
       <div class="post-stats">
         <div class="post-stat"><b>${fmtNum(l.views)}</b><span>izl</span></div>
@@ -694,12 +748,23 @@ function renderPostItem(p) {
     </div>`;
 }
 
+function postSortOptions(reelsOnly) {
+  const rateOptions = ["like_rate", "comment_rate", "save_rate", "share_rate", "engagement_rate"];
+  const baseOptions = reelsOnly
+    ? ["views", "follows", "profile_visits", "ig_reels_avg_watch_time", "reach", "likes", "saved", "shares"]
+    : ["views", "follows", "profile_visits", "reach", "likes", "saved", "shares", "comments"];
+  return [...baseOptions, ...rateOptions];
+}
+
 function renderPosts(reelsOnly) {
   let posts = DATA.posts || [];
   if (reelsOnly) posts = posts.filter(p => p.product_type === "REELS");
+  const sortOptions = postSortOptions(reelsOnly);
+  if (![...sortOptions, "posted_at"].includes(postSort)) postSort = "views";
   posts = [...posts].sort((a, b) => {
     if (postSort === "posted_at") return (b.posted_at || "").localeCompare(a.posted_at || "");
-    return ((b.latest || {})[postSort] || 0) - ((a.latest || {})[postSort] || 0);
+    const diff = postSortValue(b, postSort) - postSortValue(a, postSort);
+    return diff || metricNumber(b, "views") - metricNumber(a, "views");
   });
   const paneId = reelsOnly ? "pane-reels" : "pane-posts";
   const tabKey = reelsOnly ? "reels" : "posts";
@@ -710,16 +775,12 @@ function renderPosts(reelsOnly) {
   const start = (safePage - 1) * PAGE_SIZE;
   const pageItems = posts.slice(start, start + PAGE_SIZE);
   const latestFetchedAt = getLatestFetchedAt(posts);
-  const sortOptions = reelsOnly
-    ? ["views", "follows", "profile_visits", "ig_reels_avg_watch_time", "reach", "likes", "saved", "shares"]
-    : ["views", "follows", "profile_visits", "reach", "likes", "saved", "shares", "comments"];
-  const labels = { views:"İzlenme", reach:"Erişim", likes:"Beğeni", saved:"Kayıt", shares:"Paylaşım", follows:"Takip", profile_visits:"Profil Z.", comments:"Yorum", ig_reels_avg_watch_time:"Ort. İzl.", posted_at:"Tarih" };
   document.getElementById(paneId).innerHTML = `
     <div class="card">
       <h3>${reelsOnly ? "Reels" : "Tüm İçerikler"} (${posts.length})</h3>
       <div class="list-meta">Son veri: ${latestFetchedAt ? fmtDateTime(latestFetchedAt) : "—"}</div>
       <div class="sort-bar">
-        ${sortOptions.map(k => `<button class="${postSort===k?'active':''}" onclick="setSort('${k}')">${labels[k]||k}</button>`).join("")}
+        ${sortOptions.map(k => `<button class="${postSort===k?'active':''}" onclick="setSort('${k}')">${POST_SORT_LABELS[k]||k}</button>`).join("")}
         <button class="${postSort==='posted_at'?'active':''}" onclick="setSort('posted_at')">Tarih</button>
       </div>
       <div class="post-list">${posts.length ? pageItems.map(renderPostItem).join("") : '<div class="empty">Henüz veri yok.</div>'}</div>
@@ -727,7 +788,11 @@ function renderPosts(reelsOnly) {
     </div>`;
 }
 
-function setSort(k) { postSort = k; renderPane(activeTab); }
+function setSort(k) {
+  postSort = k;
+  if (activeTab === "posts" || activeTab === "reels") setPageState(activeTab, 1);
+  else renderPane(activeTab);
+}
 
 function getPostViewHistory(p) {
   const rows = p.view_history && p.view_history.length
@@ -816,6 +881,11 @@ function openPost(id) {
     ["Takip", fmtNum(l.follows)],
     ["Profil Ziyaret", fmtNum(l.profile_visits)],
     ["Toplam Etkil.", fmtNum(l.total_interactions)],
+    ["Toplam Etkileşim Oranı", fmtRate(postRate(p, "engagement_rate"))],
+    ["Beğeni Oranı", fmtRate(postRate(p, "like_rate"))],
+    ["Yorum Oranı", fmtRate(postRate(p, "comment_rate"))],
+    ["Paylaşım Oranı", fmtRate(postRate(p, "share_rate"))],
+    ["Kayıt Oranı", fmtRate(postRate(p, "save_rate"))],
   ];
   if (isReels) {
     stats.push(["Ort. İzlenme", fmtSec(l.ig_reels_avg_watch_time)]);
