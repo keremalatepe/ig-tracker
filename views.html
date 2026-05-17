@@ -191,7 +191,13 @@
     background: #fff;
     padding: 8px;
     margin-bottom: 7px;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
   }
+  .row:hover { border-color: #cfcac4; }
   .thumb {
     width: 52px;
     height: 52px;
@@ -242,6 +248,115 @@
     color: var(--muted);
     padding: 36px 16px;
   }
+  .modal-bg {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: none;
+    align-items: flex-end;
+    justify-content: center;
+    background: rgba(0,0,0,0.5);
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    position: relative;
+    width: 100%;
+    max-width: 820px;
+    max-height: 88vh;
+    overflow-y: auto;
+    border-radius: 16px 16px 0 0;
+    background: #fff;
+    padding: 16px;
+  }
+  @media (min-width: 640px) {
+    .modal-bg { align-items: center; }
+    .modal { border-radius: 16px; max-height: 90vh; }
+  }
+  .modal-close {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.05);
+    cursor: pointer;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-hdr { display: flex; gap: 10px; margin-bottom: 12px; padding-right: 28px; }
+  .modal-hdr img { width: 72px; height: 72px; border-radius: 8px; object-fit: cover; background: #eee; flex-shrink: 0; }
+  .detail-caption {
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.35;
+    font-weight: 650;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .detail-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 32px;
+    border-radius: 8px;
+    padding: 6px 10px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .detail-link:hover { background: #f7f7f7; text-decoration: none; }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  @media (min-width: 640px) {
+    .detail-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  .detail-kpi {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+  }
+  .detail-kpi span {
+    display: block;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .detail-kpi b { display: block; font-size: 18px; margin-top: 4px; }
+  .detail-section {
+    margin-top: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff;
+  }
+  .detail-note { color: var(--muted); font-size: 12px; margin: -2px 0 8px; }
+  .detail-table { display: grid; gap: 6px; font-size: 12px; }
+  .detail-row {
+    display: grid;
+    grid-template-columns: minmax(88px, 1.2fr) repeat(4, minmax(54px, 0.7fr));
+    gap: 8px;
+    align-items: center;
+    border-bottom: 1px solid #f3f4f6;
+    padding: 6px 0;
+  }
+  .detail-row:last-child { border-bottom: 0; }
+  .detail-row.head { color: var(--muted); font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .detail-row span:not(:first-child) { text-align: right; }
   .loading::before {
     content: "";
     display: inline-block;
@@ -342,6 +457,9 @@
     <div id="results" class="loading">Veri yukleniyor</div>
   </div>
 </div>
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this) closeModal()">
+  <div class="modal" id="modal-content"></div>
+</div>
 
 <script>
 const RAW_DATA_URL = "https://raw.githubusercontent.com/keremalatepe/ig-tracker/main/dashboard_data.json";
@@ -354,6 +472,8 @@ const MS_DAY = 86400000;
 let DATA = null;
 let barChart = null;
 let lineChart = null;
+let detailChart = null;
+const requestedPost = new URLSearchParams(location.search).get("post");
 
 const state = {
   days: 3,
@@ -665,9 +785,8 @@ function renderLineChart(rows) {
 
 function renderRow(row) {
   const p = row.post;
-  const href = p.permalink || "#";
   return `
-    <a class="row" href="${esc(href)}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">
+    <button class="row" type="button" onclick='openPostDetail(${JSON.stringify(p.id).replace(/'/g,"&#39;")})'>
       ${p.thumbnail ? `<img class="thumb" src="${esc(p.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="thumb"></div>'}
       <div class="title">
         <div class="caption">${esc(p.caption_short || "Icerik")}</div>
@@ -677,7 +796,118 @@ function renderRow(row) {
       <div class="metric diff"><b>+${fmtNum(row.diff)}</b><span>${state.days} gun</span></div>
       <div class="metric base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
       <div class="metric total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
-    </a>`;
+    </button>`;
+}
+
+function renderDetailStats(stats) {
+  return stats
+    .filter(([_, value]) => value !== "-")
+    .map(([label, value]) => `<div class="detail-kpi"><span>${esc(label)}</span><b>${esc(value)}</b></div>`)
+    .join("");
+}
+
+function renderSnapshotRows(post) {
+  const rows = (post.history || []).slice(-8).reverse();
+  if (!rows.length) return '<div class="empty" style="padding:16px">Snapshot verisi yok.</div>';
+  return `
+    <div class="detail-table">
+      <div class="detail-row head"><span>Zaman</span><span>Izl.</span><span>Eris.</span><span>Begen.</span><span>Kayit</span></div>
+      ${rows.map(row => `<div class="detail-row">
+        <span>${fmtDateTime(row.t)}</span>
+        <span>${fmtNum(row.views)}</span>
+        <span>${fmtNum(row.reach)}</span>
+        <span>${fmtNum(row.likes)}</span>
+        <span>${fmtNum(row.saved)}</span>
+      </div>`).join("")}
+    </div>`;
+}
+
+function findCurrentRow(id) {
+  return computeRows().find(row => row.post.id === id) || null;
+}
+
+function openPostDetail(id) {
+  const post = (DATA.posts || []).find(item => item.id === id);
+  if (!post) return;
+  const row = findCurrentRow(id);
+  const latest = post.latest || {};
+  const history = getViewHistory(post);
+  const totalPoints = history.map(item => ({ x: item.t, y: item.v }));
+  const diffPoints = row ? buildCurvePoints(row) : [];
+  const stats = [
+    ["Toplam izlenme", fmtNum(row ? row.latestValue : latest.views)],
+    [`Son ${state.days} gun`, row ? `+${fmtNum(row.diff)}` : "-"],
+    ["Baseline", row ? fmtNum(row.baseline) : "-"],
+    ["Erisim", fmtNum(latest.reach)],
+    ["Begeni", fmtNum(latest.likes)],
+    ["Yorum", fmtNum(latest.comments)],
+    ["Kayit", fmtNum(latest.saved)],
+    ["Paylasim", fmtNum(latest.shares)],
+    ["Takip", fmtNum(latest.follows)],
+    ["Profil Z.", fmtNum(latest.profile_visits)],
+  ];
+
+  const modal = document.getElementById("modal-content");
+  modal.innerHTML = `
+    <button class="modal-close" onclick="closeModal()">×</button>
+    <div class="modal-hdr">
+      ${post.thumbnail ? `<img src="${esc(post.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : ""}
+      <div style="flex:1;min-width:0">
+        <div class="flag">${esc(post.product_type || post.type || "Icerik")}</div>
+        <div class="detail-caption">${esc(post.caption_short || "Icerik")}</div>
+        <div class="meta">${fmtDate(post.posted_at)}</div>
+        <div class="detail-actions">
+          ${post.permalink ? `<a class="detail-link" href="${esc(post.permalink)}" target="_blank" rel="noopener">Instagram'da ac</a>` : ""}
+        </div>
+      </div>
+    </div>
+    <div class="detail-grid">${renderDetailStats(stats)}</div>
+    <div class="detail-section">
+      <h3>Izlenme Egrisi</h3>
+      <div class="detail-note">${row ? `${fmtNum(row.baseline)} → ${fmtNum(row.latestValue)} · son ${state.days} gun +${fmtNum(row.diff)}${row.partial ? " · eksik baseline" : ""}` : "Bu filtre icin diff hesabi yok."}</div>
+      <div class="chart-wrap"><canvas id="detailChart"></canvas></div>
+    </div>
+    <div class="detail-section">
+      <h3>Son Olcumler</h3>
+      ${renderSnapshotRows(post)}
+    </div>`;
+
+  document.getElementById("modal-bg").classList.add("open");
+  document.body.style.overflow = "hidden";
+  setTimeout(() => {
+    const ctx = document.getElementById("detailChart");
+    if (!ctx || !totalPoints.length) return;
+    if (detailChart) detailChart.destroy();
+    detailChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        datasets: [
+          { label: "Toplam izlenme", data: totalPoints, borderColor: "#2563eb", backgroundColor: "transparent", tension: 0.2, pointRadius: 0, borderWidth: 2 },
+          ...(diffPoints.length ? [{ label: `Son ${state.days} gun artis`, data: diffPoints, borderColor: "#168a5b", backgroundColor: "transparent", tension: 0.2, pointRadius: 0, borderWidth: 2, yAxisID: "y1" }] : []),
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { labels: { font: { size: 11 } } } },
+        scales: {
+          x: { type: "time", time: { unit: state.days <= 3 ? "hour" : state.days <= 14 ? "day" : "week" }, ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 } },
+          y: { ticks: { font: { size: 10 } } },
+          y1: { position: "right", grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } },
+        }
+      }
+    });
+  }, 50);
+}
+
+function closeModal() {
+  document.getElementById("modal-bg").classList.remove("open");
+  document.body.style.overflow = "";
+  if (detailChart) {
+    try { detailChart.destroy(); } catch(e) {}
+    detailChart = null;
+  }
 }
 
 async function fetchJson() {
@@ -700,6 +930,7 @@ async function load() {
     renderChrome();
     document.getElementById("dataUpdated").textContent = DATA.generated_at ? fmtDateTime(DATA.generated_at) : "-";
     render();
+    if (requestedPost) setTimeout(() => openPostDetail(requestedPost), 0);
   } catch (err) {
     document.getElementById("site-chrome").innerHTML = '<div class="loading">Veri yukleniyor</div>';
     document.getElementById("results").className = "";

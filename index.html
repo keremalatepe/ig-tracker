@@ -140,7 +140,7 @@
   }
   .modal-bg.open { display: flex; }
   .modal {
-    background: #fff; width: 100%; max-width: 720px;
+    background: #fff; width: 100%; max-width: 820px;
     max-height: 88vh; overflow-y: auto; border-radius: 16px 16px 0 0; padding: 16px; position: relative;
   }
   @media (min-width: 640px) { .modal-bg { align-items: center; } .modal { border-radius: 16px; max-height: 90vh; } }
@@ -152,6 +152,29 @@
     border-radius: 50%; font-size: 18px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
   }
+  .detail-caption { font-size: 13px; margin-top: 6px; line-height: 1.35; color: #222; }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .detail-link {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-height: 32px; border-radius: 8px; padding: 6px 10px;
+    border: 1px solid #e5e5e5; background: #fff; color: #1a1a1a;
+    font-size: 12px; font-weight: 700; text-decoration: none;
+  }
+  .detail-link:hover { background: #f7f7f7; text-decoration: none; }
+  .detail-section {
+    margin-top: 12px; border: 1px solid #f0f0f0; border-radius: 10px;
+    padding: 12px; background: #fff;
+  }
+  .detail-section h3 { margin-bottom: 8px; }
+  .detail-note { color: #888; font-size: 12px; margin: -2px 0 8px; }
+  .detail-table { display: grid; gap: 6px; font-size: 12px; }
+  .detail-row {
+    display: grid; grid-template-columns: minmax(88px, 1.2fr) repeat(4, minmax(54px, 0.7fr));
+    gap: 8px; align-items: center; border-bottom: 1px solid #f3f4f6; padding: 6px 0;
+  }
+  .detail-row:last-child { border-bottom: 0; }
+  .detail-row.head { color: #888; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .detail-row span:not(:first-child) { text-align: right; }
 
   .demo-bar-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
   .demo-bar-key { width: 70px; flex-shrink: 0; color: #555; }
@@ -216,6 +239,8 @@ const fmtDateTime = iso => {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("tr-TR", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 };
+const parseDate = iso => new Date(String(iso || "").replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+const esc = s => String(s || "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[ch]));
 
 let DATA = null;
 let activeTab = "summary";
@@ -242,6 +267,7 @@ const ACCOUNT_METRIC_COLORS = {
 
 const allowedTabs = new Set(["summary", "posts", "reels", "stories", "account", "demo", "runs"]);
 const requestedTab = new URLSearchParams(location.search).get("tab");
+const requestedPost = new URLSearchParams(location.search).get("post");
 if (requestedTab && allowedTabs.has(requestedTab)) activeTab = requestedTab;
 
 function getLatestFetchedAt(items) {
@@ -606,16 +632,92 @@ function renderPosts(reelsOnly) {
 
 function setSort(k) { postSort = k; renderPane(activeTab); }
 
+function getPostViewHistory(p) {
+  const rows = p.view_history && p.view_history.length
+    ? p.view_history.map(x => Array.isArray(x) ? { t: x[0], v: x[1] } : { t: x.t, v: x.v })
+    : (p.history || []).map(x => ({ t: x.t, v: x.views }));
+  return rows
+    .map(x => ({ t: parseDate(x.t), iso: x.t, v: Number(x.v) }))
+    .filter(x => Number.isFinite(x.v) && !Number.isNaN(x.t.getTime()))
+    .sort((a, b) => a.t - b.t);
+}
+
+function computePostDiff(p, days = 7) {
+  const history = getPostViewHistory(p);
+  const generated = DATA && DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
+  const cutoff = new Date(generated.getTime() - days * 86400000);
+  const latestFromHistory = history[history.length - 1];
+  const latestValue = Number.isFinite(Number(p.latest && p.latest.views))
+    ? Number(p.latest.views)
+    : latestFromHistory && latestFromHistory.v;
+  if (!Number.isFinite(latestValue)) return null;
+
+  const postedAt = p.posted_at ? parseDate(p.posted_at) : null;
+  let baseline = null;
+  let baselineAt = null;
+  let partial = false;
+  if (postedAt && !Number.isNaN(postedAt.getTime()) && postedAt > cutoff) {
+    baseline = 0;
+    baselineAt = postedAt;
+  } else {
+    const before = history.filter(x => x.t <= cutoff).pop();
+    if (before) {
+      baseline = before.v;
+      baselineAt = before.t;
+    } else if (history.length) {
+      baseline = history[0].v;
+      baselineAt = history[0].t;
+      partial = true;
+    }
+  }
+  if (baseline == null) return null;
+  return { days, cutoff, baseline, baselineAt, latestValue, diff: Math.max(0, latestValue - baseline), partial };
+}
+
+function buildPostDiffPoints(p, diff) {
+  if (!diff) return [];
+  const startAt = diff.baselineAt && diff.baselineAt > diff.cutoff ? diff.baselineAt : diff.cutoff;
+  const points = [{ x: startAt, y: 0 }];
+  for (const item of getPostViewHistory(p)) {
+    if (item.t < startAt) continue;
+    points.push({ x: item.t, y: Math.max(0, item.v - diff.baseline) });
+  }
+  if (points.length === 1) points.push({ x: DATA.generated_at ? parseDate(DATA.generated_at) : new Date(), y: diff.diff });
+  return points;
+}
+
+function renderSnapshotRows(p) {
+  const rows = (p.history || []).slice(-8).reverse();
+  if (!rows.length) return '<div class="empty" style="padding:16px">Snapshot verisi yok.</div>';
+  return `
+    <div class="detail-table">
+      <div class="detail-row head"><span>Zaman</span><span>İzl.</span><span>Eriş.</span><span>Beğ.</span><span>Kayıt</span></div>
+      ${rows.map(row => `<div class="detail-row">
+        <span>${fmtDateTime(row.t)}</span>
+        <span>${fmtNum(row.views)}</span>
+        <span>${fmtNum(row.reach)}</span>
+        <span>${fmtNum(row.likes)}</span>
+        <span>${fmtNum(row.saved)}</span>
+      </div>`).join("")}
+    </div>`;
+}
+
 function openPost(id) {
   const p = (DATA.posts || []).find(x => x.id === id);
   if (!p) return;
   const l = p.latest || {};
   const isReels = p.product_type === "REELS";
+  const diff = computePostDiff(p, 7);
   const stats = [
-    ["İzlenme", fmtNum(l.views)], ["Erişim", fmtNum(l.reach)],
-    ["Beğeni", fmtNum(l.likes)], ["Yorum", fmtNum(l.comments)],
-    ["Kayıt", fmtNum(l.saved)], ["Paylaşım", fmtNum(l.shares)],
-    ["Takip", fmtNum(l.follows)], ["Profil Ziyaret", fmtNum(l.profile_visits)],
+    ["İzlenme", fmtNum(l.views)],
+    ["Son 7 gün", diff ? `+${fmtNum(diff.diff)}` : "—"],
+    ["Erişim", fmtNum(l.reach)],
+    ["Beğeni", fmtNum(l.likes)],
+    ["Yorum", fmtNum(l.comments)],
+    ["Kayıt", fmtNum(l.saved)],
+    ["Paylaşım", fmtNum(l.shares)],
+    ["Takip", fmtNum(l.follows)],
+    ["Profil Ziyaret", fmtNum(l.profile_visits)],
     ["Toplam Etkil.", fmtNum(l.total_interactions)],
   ];
   if (isReels) {
@@ -630,32 +732,49 @@ function openPost(id) {
       ${p.thumbnail ? `<img src="${p.thumbnail}" referrerpolicy="no-referrer" />` : ""}
       <div style="flex:1;min-width:0">
         <div class="post-badges">${badgeForType(p.product_type, p.type)}</div>
-        <div style="font-size:13px;margin-top:6px;line-height:1.3">${(p.caption_short || "").replace(/</g, "&lt;")}</div>
+        <div class="detail-caption">${esc(p.caption_short || "")}</div>
         <div class="post-date">${fmtDate(p.posted_at)}</div>
-        ${p.permalink ? `<a href="${p.permalink}" target="_blank" style="font-size:12px">Instagram'da aç →</a>` : ""}
+        <div class="detail-actions">
+          ${p.permalink ? `<a class="detail-link" href="${p.permalink}" target="_blank" rel="noopener">Instagram'da aç</a>` : ""}
+        </div>
       </div>
     </div>
     <div class="kpi-grid">
       ${stats.filter(([k,v]) => v !== "—").map(([k,v]) => `<div class="kpi"><div class="kpi-label">${k}</div><div class="kpi-value" style="font-size:16px">${v}</div></div>`).join("")}
     </div>
-    <div class="card" style="margin-top:12px;margin-bottom:0">
-      <h3>Zaman İçindeki Değişim</h3>
+    <div class="detail-section">
+      <h3>İzlenme Eğrisi</h3>
+      <div class="detail-note">${diff ? `${fmtNum(diff.baseline)} → ${fmtNum(diff.latestValue)} · son ${diff.days} gün +${fmtNum(diff.diff)}${diff.partial ? " · eksik baseline" : ""}` : "Yeterli izlenme geçmişi yok."}</div>
       <div class="chart-wrap"><canvas id="chart-post-history"></canvas></div>
+    </div>
+    <div class="detail-section">
+      <h3>Son Ölçümler</h3>
+      ${renderSnapshotRows(p)}
     </div>`;
   document.getElementById("modal-bg").classList.add("open");
   document.body.style.overflow = "hidden";
-  const h = p.history || [];
+  const views = getPostViewHistory(p).map(x => ({ x: x.t, y: x.v }));
+  const diffPoints = buildPostDiffPoints(p, diff);
   setTimeout(() => {
     const ctx = document.getElementById("chart-post-history");
-    if (!ctx || !h.length) return;
+    if (!ctx || !views.length) return;
     chartsByTab.postHistory = new Chart(ctx, {
       type: "line",
-      data: { labels: h.map(x => fmtDate(x.t)), datasets: [
-        { label: "İzlenme", data: h.map(x => x.views), borderColor: "#833ab4", backgroundColor: "transparent", tension: 0.25, borderWidth: 2 },
-        { label: "Erişim", data: h.map(x => x.reach), borderColor: "#fd1d1d", backgroundColor: "transparent", tension: 0.25, borderWidth: 2 },
-        { label: "Beğeni", data: h.map(x => x.likes), borderColor: "#fcb045", backgroundColor: "transparent", tension: 0.25, borderWidth: 2 },
+      data: { datasets: [
+        { label: "Toplam izlenme", data: views, borderColor: "#833ab4", backgroundColor: "transparent", tension: 0.25, borderWidth: 2, pointRadius: 0 },
+        ...(diffPoints.length ? [{ label: `Son ${diff.days} gün artış`, data: diffPoints, borderColor: "#16a34a", backgroundColor: "transparent", tension: 0.25, borderWidth: 2, pointRadius: 0, yAxisID: "y1" }] : []),
       ]},
-      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false }, plugins: { legend: { labels: { font: { size: 11 } } } }, scales: { x: { ticks: { maxRotation: 0, maxTicksLimit: 5, font: { size: 9 } } }, y: { ticks: { font: { size: 10 } } } } }
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { labels: { font: { size: 11 } } } },
+        scales: {
+          x: { type: "time", time: { unit: views.length > 40 ? "week" : "day" }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 9 } } },
+          y: { ticks: { font: { size: 10 }, callback: value => fmtShort(value) } },
+          y1: { position: "right", grid: { drawOnChartArea: false }, ticks: { font: { size: 10 }, callback: value => fmtShort(value) } },
+        }
+      }
     });
   }, 50);
 }
@@ -869,6 +988,7 @@ async function load() {
     if (!DATA) throw lastErr || new Error("Veri alınamadı.");
     if (!DATA || !DATA.profile) throw new Error("'profile' alanı bulunamadı.");
     render();
+    if (requestedPost) setTimeout(() => openPost(requestedPost), 0);
   } catch(err) {
     document.getElementById("root").innerHTML = `
       <div class="card" style="max-width:400px;margin:40px auto">
