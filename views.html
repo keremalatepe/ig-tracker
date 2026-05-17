@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Izlenme Diff</title>
+<title>Instagram Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
@@ -500,6 +500,7 @@ function fmtDateTime(iso) {
 
 function parseDate(iso) {
   if (iso instanceof Date) return iso;
+  if (typeof iso === "number") return new Date(iso);
   return new Date(String(iso || "").replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
 }
 
