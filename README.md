@@ -27,7 +27,7 @@ API çağrılarını azaltmak ve workflow süresini kısaltmak için modlar:
 | Mod      | Ne yapar                                                | Sıklık (auto'da)         |
 |----------|---------------------------------------------------------|--------------------------|
 | `hourly` | Profil + son 14 gündeki postlar + aktif storyler        | Her saat                 |
-| `daily`  | Tüm eski postlar + account insights + online followers  | 12 saatte 1              |
+| `daily`  | Tüm eski postlar + account insights + online followers  | 6 saatte 1               |
 | `weekly` | Audience demographics                                    | 7 günde 1                |
 | `full`   | Hepsini bir arada çalıştır                              | Manuel (workflow_dispatch) |
 | `auto`   | Cursor'lara bakıp uygun olanları otomatik tetikler      | **Varsayılan**           |

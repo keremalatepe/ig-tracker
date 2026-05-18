@@ -6,7 +6,7 @@ insights verilerini SQLite veritabanına kaydeder.
 
 Tiered fetching ile çalışır:
 - hourly  : profil + son 14 gündeki postlar + aktif storyler          (her saat)
-- daily   : eski tüm postlar + account-level insights                  (12 saatte 1)
+- daily   : eski tüm postlar + account-level insights                  (6 saatte 1)
 - weekly  : audience demographics (yaş, cinsiyet, ülke, şehir)         (haftada 1)
 - full    : hepsi (ilk kurulum veya manuel tetikleme için)
 
@@ -49,7 +49,7 @@ FETCH_INTERVAL_SECONDS = 3600
 
 # Tiered fetching ayarları
 HOURLY_LOOKBACK_DAYS = 14       # Son 14 gündeki postlar her saat çekilir
-OLD_POSTS_INTERVAL_HOURS = 12   # Eski postlar 12 saatte bir
+OLD_POSTS_INTERVAL_HOURS = 6    # Eski postlar 6 saatte bir
 WEEKLY_INTERVAL_DAYS = 7        # Demographics haftada bir
 REQUEST_DELAY_SECONDS = 0.15    # API çağrıları arası küçük gecikme
 
@@ -849,7 +849,7 @@ def run_hourly(fetcher: InstagramFetcher, conn: sqlite3.Connection, fetched_at: 
 
 
 def run_old_posts(fetcher: InstagramFetcher, conn: sqlite3.Connection, fetched_at: str) -> int:
-    """Tüm eski postları (14 günden daha eski) çek. 12 saatte 1 çalışır."""
+    """Tüm eski postları (14 günden daha eski) çek. 6 saatte 1 çalışır."""
     log.info("[old_posts] Tüm eski postlar çekiliyor...")
     cutoff = datetime.now(timezone.utc) - timedelta(days=HOURLY_LOOKBACK_DAYS)
     all_media = fetcher.fetch_all_media()
@@ -1031,8 +1031,8 @@ def execute_mode(fetcher: InstagramFetcher, conn: sqlite3.Connection, mode: str)
 
     auto modu:
       - hourly her zaman çalışır
-      - eski postlar son 12 saatten eski ise çalışır
-      - account insights son 12 saatten eski ise çalışır
+      - eski postlar son 6 saatten eski ise çalışır
+      - account insights son 6 saatten eski ise çalışır
       - demographics son 7 günden eski ise çalışır
     """
     fetched_at = datetime.now(timezone.utc).isoformat()
