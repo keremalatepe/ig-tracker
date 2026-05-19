@@ -8,11 +8,13 @@
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
   :root { color-scheme: light; }
+  html { scrollbar-gutter: stable both-edges; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   body {
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     color: #1a1a1a; background: #fafafa; font-size: 15px; line-height: 1.4;
+    overflow-y: scroll;
   }
   .container { max-width: 980px; margin: 0 auto; padding: 12px; }
 
@@ -69,19 +71,20 @@
   .delta-flat { color: #888; }
 
   .range-sel {
-    display: inline-flex; gap: 2px; background: #f0f0f0; padding: 2px;
-    border-radius: 8px; font-size: 12px; margin-bottom: 8px;
+    display: inline-flex; flex-wrap: wrap; gap: 2px; background: #f0f0f0; padding: 2px;
+    border-radius: 8px; font-size: 12px; margin-bottom: 8px; max-width: 100%;
   }
   .range-sel button {
     background: transparent; border: 0; padding: 5px 10px; border-radius: 6px;
-    cursor: pointer; color: #666; font-size: 12px; font-weight: 600;
+    cursor: pointer; color: #666; font-size: 12px; font-weight: 600; white-space: nowrap;
   }
   .range-sel button.active { background: #fff; color: #1a1a1a; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
 
   .chart-wrap { position: relative; height: 220px; }
   @media (min-width: 640px) { .chart-wrap { height: 260px; } }
+  .chart-wrap canvas { max-width: 100% !important; }
 
-  .metric-toggle { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .metric-toggle { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; max-width: 100%; }
   .metric-btn {
     background: #f0f0f0; border: none; border-radius: 6px;
     padding: 4px 10px; font-size: 11px; font-weight: 600; cursor: pointer; color: #555;
@@ -182,7 +185,7 @@
   .demo-bar-inner { height: 100%; background: linear-gradient(90deg, #833ab4, #fd1d1d); border-radius: 4px; }
   .demo-bar-val { font-weight: 700; font-size: 11px; min-width: 40px; text-align: right; color: #333; }
 
-  .pane { display: none; }
+  .pane { display: none; min-width: 0; overflow-x: hidden; }
   .pane.active { display: block; }
 
   .loading, .empty { text-align: center; padding: 40px 20px; color: #888; font-size: 14px; }
@@ -1389,13 +1392,13 @@ function renderHeatmap(heatmap) {
   const max = Math.max(...hours.map(x => x.avg)) || 1;
   const peak = hours.reduce((a, b) => b.avg > a.avg ? b : a, hours[0]);
   return `
-    <div style="display:flex;gap:2px;align-items:flex-end;height:100px;margin-top:8px">
+    <div style="display:flex;gap:2px;align-items:flex-end;height:100px;margin-top:8px;width:100%;min-width:0;overflow:hidden">
       ${hours.map(({h, avg}) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px">
         <div style="width:100%;height:${(avg/max*100).toFixed(0)}%;background:linear-gradient(180deg,#833ab4,#fd1d1d);border-radius:2px;min-height:1px"></div>
         <div style="font-size:8px;color:#aaa">${h}</div>
       </div>`).join("")}
     </div>
-    <div style="text-align:center;font-size:11px;color:#888;margin-top:4px">Saat (0-23 UTC) · Tepe: ${peak.h}:00</div>`;
+    <div style="text-align:center;font-size:11px;color:#888;margin-top:4px;overflow-wrap:anywhere">Saat (0-23 UTC) - Tepe: ${peak.h}:00</div>`;
 }
 
 function renderDemo() {
