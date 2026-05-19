@@ -228,6 +228,61 @@
   .short-stat { font-size: 10px; color: #555; }
   .short-stat b { color: #1a1a1a; }
 
+  /* ── Diff sekmesi ─────────────────── */
+  .diff-filter {
+    background: #fff; border: 1px solid #f0f0f0; border-radius: 12px;
+    margin-bottom: 12px; overflow: hidden;
+  }
+  .diff-filter summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 12px 14px; cursor: pointer; list-style: none;
+    font-size: 14px; font-weight: 700; color: #222;
+  }
+  .diff-filter summary::-webkit-details-marker { display: none; }
+  .diff-filter summary::after {
+    content: ""; width: 7px; height: 7px; flex-shrink: 0;
+    border-right: 2px solid #888; border-bottom: 2px solid #888;
+    transform: rotate(45deg); transition: transform 0.15s;
+  }
+  .diff-filter[open] summary::after { transform: rotate(225deg); }
+  .diff-filter-body { border-top: 1px solid #f0f0f0; padding: 12px 14px; }
+  .diff-fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  @media (min-width: 640px) { .diff-fields { grid-template-columns: repeat(3, 1fr); } }
+  .diff-field label { display: block; font-size: 11px; color: #888; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
+  .diff-field input, .diff-field select {
+    width: 100%; min-height: 36px; border: 1px solid #e5e5e5; border-radius: 8px;
+    background: #fff; color: #1a1a1a; padding: 6px 10px; font: inherit; outline: none;
+  }
+  .diff-field input:focus, .diff-field select:focus { border-color: #a3a3a3; }
+  .diff-row {
+    display: grid;
+    grid-template-columns: 52px minmax(0,1fr) 96px 84px 84px;
+    gap: 10px; align-items: center; min-height: 68px;
+    border: 1px solid #f0f0f0; border-radius: 10px;
+    background: #fff; padding: 8px; margin-bottom: 7px;
+    cursor: pointer; text-align: left; color: inherit; font: inherit; width: 100%;
+  }
+  .diff-row:hover { border-color: #ccc; }
+  .diff-thumb { width: 52px; height: 52px; border-radius: 7px; object-fit: cover; background: #eee; display: block; }
+  .diff-metric { text-align: right; white-space: nowrap; }
+  .diff-metric b { display: block; font-size: 15px; font-weight: 700; }
+  .diff-metric span { display: block; color: #888; font-size: 10px; }
+  .diff-gain b { color: #16a34a; font-size: 17px; }
+  .diff-flag { display: inline-block; border-radius: 5px; padding: 2px 5px; margin-top: 3px; color: #b45309; background: #fff7ed; font-size: 10px; font-weight: 800; }
+  .diff-table-head {
+    display: grid; grid-template-columns: 52px minmax(0,1fr) 96px 84px 84px;
+    gap: 10px; padding: 0 8px 7px;
+    color: #888; font-size: 11px; font-weight: 800; text-transform: uppercase;
+  }
+  @media (max-width: 640px) {
+    .diff-row { grid-template-columns: 52px minmax(0,1fr) 88px; grid-template-areas: "thumb title gain" "thumb base total"; }
+    .diff-thumb { grid-area: thumb; }
+    .diff-metric.diff-gain { grid-area: gain; }
+    .diff-metric.diff-base { grid-area: base; text-align: left; }
+    .diff-metric.diff-total { grid-area: total; }
+    .diff-table-head { display: none; }
+  }
+
   .footer-info { text-align: center; font-size: 11px; color: #aaa; margin: 16px 0 8px; }
   .top-update {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -391,6 +446,7 @@ let shortsSort = "views";
 let selectedShortId = null;
 let activePlatform = "instagram";
 let activeYtTab = "shorts";
+let diffState = { days: 3, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video" };
 const PAGE_SIZE = 20;
 
 const YT_SORT_LABELS = {
@@ -428,7 +484,7 @@ const POST_SORT_LABELS = {
   posted_at: "Tarih",
 };
 
-const allowedTabs = new Set(["summary", "posts", "reels", "stories", "account", "demo", "runs", "youtube"]);
+const allowedTabs = new Set(["summary", "diff", "posts", "reels", "stories", "account", "demo", "runs"]);
 const requestedTab = new URLSearchParams(location.search).get("tab");
 const requestedPost = new URLSearchParams(location.search).get("post");
 if (requestedTab && allowedTabs.has(requestedTab)) activeTab = requestedTab;
@@ -565,7 +621,8 @@ function renderInstagramView(platformTabsHtml) {
     avatarHtml = `<img src="${profile.profile_picture_url}" alt="" onerror="this.style.display='none'" />`;
 
   const tabs = [
-    { id: "summary", label: "Özet" }, { id: "posts", label: "İçerikler" },
+    { id: "summary", label: "Özet" }, { id: "diff", label: "Diff" },
+    { id: "posts", label: "İçerikler" },
     { id: "reels", label: "Reels" }, { id: "stories", label: "Stories" },
     ...(showAccountTab ? [{ id: "account", label: "Hesap" }] : []),
     { id: "demo", label: "Demografik" }, { id: "runs", label: "Çalışmalar" },
@@ -586,9 +643,7 @@ function renderInstagramView(platformTabsHtml) {
       <button class="refresh-btn" onclick="load()">↻ Yenile</button>
     </div>
     <div class="tabs">
-      <button class="tab ${activeTab==='summary'?'active':''}" onclick="setTab('summary')">Özet</button>
-      <a class="tab" href="views.html">Diff</a>
-      ${tabs.filter(t => t.id !== 'summary').map(t => `<button class="tab ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`).join("")}
+      ${tabs.map(t => `<button class="tab ${activeTab===t.id?'active':''}" onclick="setTab('${t.id}')">${t.label}</button>`).join("")}
     </div>
     <div class="top-update">
       <span>Son güncelleme: <b>${updated}</b></span>
@@ -608,6 +663,7 @@ function setTab(t) {
 
 function renderPane(tab) {
   if (tab === "summary") renderSummary();
+  else if (tab === "diff") renderDiff();
   else if (tab === "posts") renderPosts(false);
   else if (tab === "reels") renderPosts(true);
   else if (tab === "stories") renderStories();
@@ -1204,6 +1260,219 @@ function renderRuns() {
     </div>`;
 }
 
+// ─── Diff sekmesi ─────────────────────────────────────────────────────────
+
+const DIFF_COLORS = ["#168a5b","#2563eb","#b45309","#dc2626","#7c3aed","#0891b2","#ca8a04","#be185d","#0f766e","#6d28d9","#1d4ed8","#15803d"];
+
+function renderDiff() {
+  const isMobile = window.innerWidth < 640;
+  document.getElementById("pane-diff").innerHTML = `
+    <details class="diff-filter" id="diff-filter-panel" ${!isMobile ? "open" : ""}>
+      <summary>
+        <span>Filtreler — İzlenme Artışı</span>
+        <span style="color:#888;font-size:12px" id="diff-filter-meta"></span>
+      </summary>
+      <div class="diff-filter-body">
+        <div class="diff-fields">
+          <div class="diff-field"><label>Gün sayısı</label><input id="df-days" type="number" min="1" max="90" value="${diffState.days}" /></div>
+          <div class="diff-field"><label>Liste limiti</label><input id="df-limit" type="number" min="1" max="500" value="${diffState.limit}" /></div>
+          <div class="diff-field"><label>Grafik eğrisi</label><input id="df-curves" type="number" min="1" max="30" value="${diffState.curveCount}" /></div>
+          <div class="diff-field"><label>Min. artış</label><input id="df-min" type="text" inputmode="numeric" placeholder="0" value="${diffState.minDiff ?? ""}" /></div>
+          <div class="diff-field"><label>Maks. artış</label><input id="df-max" type="text" inputmode="numeric" placeholder="Boş" value="${diffState.maxDiff ?? ""}" /></div>
+          <div class="diff-field"><label>İçerik tipi</label>
+            <select id="df-type">
+              <option value="video" ${diffState.type==="video"?"selected":""}>Video</option>
+              <option value="reels" ${diffState.type==="reels"?"selected":""}>Reels</option>
+              <option value="all" ${diffState.type==="all"?"selected":""}>Tüm içerikler</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </details>
+    <div class="card kpi-grid" id="diff-stats" style="gap:8px"></div>
+    <div class="card">
+      <h3>En Çok İzlenme Artışı</h3>
+      <div class="chart-wrap"><canvas id="chart-diff-bar"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>İzlenme Artış Eğrileri</h3>
+      <div class="chart-wrap"><canvas id="chart-diff-line"></canvas></div>
+    </div>
+    <div class="card" id="diff-results-card">
+      <div class="diff-table-head"><span></span><span>İçerik</span><span>Artış</span><span>Başlangıç</span><span>Toplam</span></div>
+      <div id="diff-results" class="loading">Hesaplanıyor…</div>
+    </div>`;
+
+  ["df-days","df-limit","df-curves","df-min","df-max","df-type"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener("change", updateDiff); el.addEventListener("input", updateDiff); }
+  });
+  updateDiff();
+}
+
+function parseDiffAmount(val) {
+  if (!val || String(val).trim() === "") return null;
+  const raw = String(val).trim();
+  const digits = raw.replace(/[^\d]/g, "");
+  if (!digits) return null;
+  return Number(digits) * (/k/i.test(raw) ? 1000 : 1);
+}
+
+function readDiffControls() {
+  const g = id => document.getElementById(id);
+  diffState.days = Math.max(1, Math.min(90, parseInt(g("df-days").value, 10) || 3));
+  diffState.limit = Math.max(1, Math.min(500, parseInt(g("df-limit").value, 10) || 25));
+  diffState.curveCount = Math.max(1, Math.min(30, parseInt(g("df-curves").value, 10) || 5));
+  diffState.minDiff = parseDiffAmount(g("df-min").value);
+  diffState.maxDiff = parseDiffAmount(g("df-max").value);
+  diffState.type = g("df-type").value;
+}
+
+function computeDiffRows() {
+  if (!DATA) return [];
+  const generated = DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
+  const cutoff = new Date(generated.getTime() - diffState.days * 86400000);
+  const rows = [];
+  for (const post of DATA.posts || []) {
+    if (diffState.type === "reels" && post.product_type !== "REELS") continue;
+    if (diffState.type === "video" && post.type !== "VIDEO" && post.product_type !== "REELS") continue;
+    const history = getPostViewHistory(post);
+    const latestValue = Number.isFinite(Number(post.latest && post.latest.views))
+      ? Number(post.latest.views)
+      : (history[history.length - 1] && history[history.length - 1].v);
+    if (!Number.isFinite(latestValue)) continue;
+    const postedAt = post.posted_at ? parseDate(post.posted_at) : null;
+    let baseline = null, baselineAt = null, partial = false;
+    if (postedAt && !isNaN(postedAt.getTime()) && postedAt > cutoff) {
+      baseline = 0; baselineAt = postedAt;
+    } else {
+      const before = history.filter(x => x.t <= cutoff).pop();
+      if (before) { baseline = before.v; baselineAt = before.t; }
+      else if (history.length) { baseline = history[0].v; baselineAt = history[0].t; partial = true; }
+    }
+    if (baseline == null) continue;
+    const diff = Math.max(0, latestValue - baseline);
+    if (diffState.minDiff != null && diff < diffState.minDiff) continue;
+    if (diffState.maxDiff != null && diff > diffState.maxDiff) continue;
+    rows.push({ post, diff, latestValue, baseline, baselineAt, partial, cutoff });
+  }
+  rows.sort((a, b) => b.diff - a.diff);
+  return rows;
+}
+
+function updateDiff() {
+  if (!document.getElementById("df-days")) return; // pane not rendered
+  readDiffControls();
+  const allRows = computeDiffRows();
+  const rows = allRows.slice(0, diffState.limit);
+  const sum = allRows.reduce((s, r) => s + r.diff, 0);
+  const partials = allRows.filter(r => r.partial).length;
+  const typeLabel = { video: "Video", reels: "Reels", all: "Tümü" }[diffState.type] || "Video";
+
+  const statsEl = document.getElementById("diff-stats");
+  if (statsEl) statsEl.innerHTML = `
+    <div class="kpi"><div class="kpi-label">Eşleşen</div><div class="kpi-value">${fmtNum(allRows.length)}</div></div>
+    <div class="kpi"><div class="kpi-label">Toplam artış</div><div class="kpi-value">${fmtShort(sum)}</div></div>
+    <div class="kpi"><div class="kpi-label">En yüksek</div><div class="kpi-value">${fmtShort(allRows[0] && allRows[0].diff)}</div></div>
+    <div class="kpi"><div class="kpi-label">Kapsam</div><div class="kpi-value" style="font-size:14px">${partials ? `${allRows.length-partials}/${allRows.length}` : "Tam"}</div></div>`;
+
+  const metaEl = document.getElementById("diff-filter-meta");
+  if (metaEl) metaEl.textContent = `${diffState.days}g · ${allRows.length} sonuç · ${typeLabel}`;
+
+  if (chartsByTab.diffBar) { try { chartsByTab.diffBar.destroy(); } catch(e){} delete chartsByTab.diffBar; }
+  if (chartsByTab.diffLine) { try { chartsByTab.diffLine.destroy(); } catch(e){} delete chartsByTab.diffLine; }
+  drawDiffBarChart(rows);
+  drawDiffLineChart(rows.slice(0, diffState.curveCount));
+
+  const resultsEl = document.getElementById("diff-results");
+  if (resultsEl) {
+    resultsEl.className = "";
+    resultsEl.innerHTML = rows.length
+      ? rows.map(renderDiffRow).join("")
+      : '<div class="empty">Eşleşen içerik bulunamadı.</div>';
+  }
+}
+
+function renderDiffRow(row) {
+  const p = row.post;
+  return `
+    <button class="diff-row" onclick='openPost(${JSON.stringify(p.id).replace(/'/g,"&#39;")})'>
+      ${p.thumbnail ? `<img class="diff-thumb" src="${esc(p.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="diff-thumb"></div>'}
+      <div>
+        <div class="post-caption">${esc(p.caption_short || "İçerik")}</div>
+        <div class="post-date">${esc(p.product_type || p.type || "")} · ${fmtDate(p.posted_at)}</div>
+        ${row.partial ? '<span class="diff-flag">eksik başlangıç</span>' : ""}
+      </div>
+      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${diffState.days}g</span></div>
+      <div class="diff-metric diff-base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
+      <div class="diff-metric diff-total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
+    </button>`;
+}
+
+function drawDiffBarChart(rows) {
+  const ctx = document.getElementById("chart-diff-bar");
+  if (!ctx || !rows.length) return;
+  chartsByTab.diffBar = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: rows.map((_, i) => `#${i+1}`),
+      datasets: [{ label: "İzlenme artışı", data: rows.map(r => r.diff),
+        backgroundColor: rows.map((_, i) => DIFF_COLORS[i % DIFF_COLORS.length]),
+        borderRadius: 5 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => rows[items[0].dataIndex]?.post.caption_short || "İçerik",
+        label: item => `Artış: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { ticks: { font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
+}
+
+function drawDiffLineChart(rows) {
+  const ctx = document.getElementById("chart-diff-line");
+  if (!ctx || !rows.length) return;
+  chartsByTab.diffLine = new Chart(ctx, {
+    type: "line",
+    data: { datasets: rows.map((row, i) => ({
+      label: `#${i+1} ${row.post.caption_short || "İçerik"}`,
+      data: buildPostDiffPoints(row.post, row),
+      borderColor: DIFF_COLORS[i % DIFF_COLORS.length],
+      backgroundColor: "transparent",
+      tension: 0.2, pointRadius: 0, borderWidth: 2
+    }))},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false },
+      plugins: {
+        legend: { position: "bottom", labels: { boxWidth: 10, font: { size: 10 },
+          generateLabels(chart) {
+            return Chart.defaults.plugins.legend.labels.generateLabels(chart)
+              .map(l => ({ ...l, text: l.text.slice(0, 48) }));
+          }
+        }},
+        tooltip: { callbacks: {
+          title: items => items[0] ? fmtDateTime(new Date(items[0].parsed.x)) : "",
+          label: item => `${item.dataset.label.slice(0,30)}: ${fmtNum(item.parsed.y)}`
+        }}
+      },
+      scales: {
+        x: { type: "time",
+          time: { unit: diffState.days <= 3 ? "hour" : diffState.days <= 14 ? "day" : "week",
+            displayFormats: { hour: "HH:mm", day: "d MMM", week: "d MMM" } },
+          ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 }
+        },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
+}
+
 // ─── YouTube ───────────────────────────────────────────────────────────────
 
 function renderYoutubeView(platformTabsHtml) {
@@ -1215,12 +1484,14 @@ function renderYoutubeView(platformTabsHtml) {
     { id: "diff",   label: "Diff" },
     { id: "hesap",  label: "Hesap" },
   ];
+  const chAvatarHtml = ch.thumbnail_url
+    ? `<img src="${esc(ch.thumbnail_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.style.display='none'" />`
+    : `<span style="font-size:22px">▶</span>`;
   document.getElementById("root").innerHTML = platformTabsHtml + `
     <div class="hdr yt-hdr">
-      <div class="hdr-avatar" style="background:rgba(255,255,255,0.2);font-size:22px">▶</div>
+      <div class="hdr-avatar" style="background:rgba(255,255,255,0.2)">${chAvatarHtml}</div>
       <div class="hdr-info">
         <p class="hdr-name">${esc(ch.channel_title || "—")}</p>
-        <p class="hdr-user">${ch.channel_id ? ch.channel_id : ""}</p>
         <div class="hdr-stats">
           <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
           <span><b>${fmtNum(ch.video_count)}</b> video</span>
@@ -1270,23 +1541,26 @@ function renderYtShorts() {
         ${Object.entries(YT_SORT_LABELS).map(([k,v]) => `<button class="${shortsSort===k?'active':''}" onclick="setShortsSort('${k}')">${v}</button>`).join("")}
       </div>
       ${shorts.length === 0 ? '<div class="empty">Henüz Short verisi yok.</div>' : ""}
-      <div class="shorts-grid">
+      <div class="post-list">
         ${pageItems.map(s => {
           const l = s.latest || {};
-          return `<div class="short-card" onclick="openShort('${esc(s.id)}')">
-            <div class="short-thumb-wrap">
+          const hasMetrics = l.views != null || l.likes != null;
+          return `<div class="post-item" onclick="openShort('${esc(s.id)}')">
+            <div style="width:40px;height:72px;border-radius:6px;overflow:hidden;background:#111;flex-shrink:0">
               ${s.thumbnail
-                ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='<div class=short-thumb-placeholder>▶</div>'" />`
-                : '<div class="short-thumb-placeholder">▶</div>'}
+                ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=0.3" />`
+                : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:16px">▶</div>'}
             </div>
-            <div class="short-info">
-              <div class="short-title">${esc(s.title || "")}</div>
-              <div class="short-date">${fmtDate(s.published_at)}</div>
-              <div class="short-stats">
-                ${l.views != null ? `<span class="short-stat"><b>${fmtShort(l.views)}</b> izl</span>` : ""}
-                ${l.likes != null ? `<span class="short-stat"><b>${fmtShort(l.likes)}</b> ♥</span>` : ""}
-                ${l.average_view_percentage != null ? `<span class="short-stat"><b>${l.average_view_percentage.toFixed(0)}%</b> izl%</span>` : ""}
-              </div>
+            <div class="post-meta">
+              <div class="post-caption">${esc(s.title || "")}</div>
+              <div class="post-date">${fmtDate(s.published_at)} · ${s.duration_seconds}s</div>
+              <div class="post-badges"><span class="badge badge-short">SHORT</span>${!hasMetrics ? '<span class="badge" style="background:#fef9c3;color:#854d0e">Veri yok</span>' : ""}</div>
+            </div>
+            <div class="post-stats">
+              <div class="post-stat"><b>${l.views != null ? fmtShort(l.views) : "—"}</b><span>izl</span></div>
+              <div class="post-stat"><b>${l.likes != null ? fmtShort(l.likes) : "—"}</b><span>♥</span></div>
+              <div class="post-stat"><b>${l.average_view_percentage != null ? l.average_view_percentage.toFixed(0)+"%" : "—"}</b><span>izl%</span></div>
+              <div class="post-stat"><b>${l.comments != null ? fmtShort(l.comments) : "—"}</b><span>yorum</span></div>
             </div>
           </div>`;
         }).join("")}

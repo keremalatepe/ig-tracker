@@ -181,9 +181,12 @@ class YouTubeFetcher:
         item = items[0]
         stats = item.get("statistics", {})
         snippet = item.get("snippet", {})
+        thumbnails = snippet.get("thumbnails", {})
+        thumbnail_url = (thumbnails.get("high") or thumbnails.get("medium") or thumbnails.get("default") or {}).get("url")
         return {
             "channel_id": item["id"],
             "channel_title": snippet.get("title"),
+            "thumbnail_url": thumbnail_url,
             "subscriber_count": int(stats.get("subscriberCount", 0) or 0),
             "view_count": int(stats.get("viewCount", 0) or 0),
             "video_count": int(stats.get("videoCount", 0) or 0),
@@ -271,9 +274,8 @@ class YouTubeFetcher:
     def fetch_video_analytics(self, video_id: str, channel_id: str,
                                start_date: str, end_date: str) -> dict:
         metrics = ",".join([
-            "views", "likes", "dislikes", "comments", "shares",
+            "views", "likes", "comments", "shares",
             "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
-            "impressions", "impressionsClickThroughRate",
             "subscribersGained", "subscribersLost",
         ])
         data = self._get(f"{ANALYTICS_API_BASE}/reports", {
@@ -301,8 +303,9 @@ def insert_channel_snapshot(conn: sqlite3.Connection, fetched_at: str, channel: 
     conn.execute("""
     INSERT INTO yt_channel_snapshots (
         fetched_at, channel_id, channel_title,
-        subscriber_count, view_count, video_count, hidden_subscriber_count
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        subscriber_count, view_count, video_count, hidden_subscriber_count,
+        thumbnail_url
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         fetched_at,
         channel.get("channel_id"),
@@ -311,6 +314,7 @@ def insert_channel_snapshot(conn: sqlite3.Connection, fetched_at: str, channel: 
         channel.get("view_count"),
         channel.get("video_count"),
         channel.get("hidden_subscriber_count"),
+        channel.get("thumbnail_url"),
     ))
 
 

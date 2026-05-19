@@ -507,8 +507,11 @@ def _yt_safe(conn: sqlite3.Connection, table: str) -> bool:
 def _build_yt_payload(conn: sqlite3.Connection) -> dict:
     channel = {}
     if _yt_safe(conn, "yt_channel_snapshots"):
-        row = conn.execute("""
-            SELECT channel_id, channel_title, subscriber_count, view_count, video_count, fetched_at
+        # thumbnail_url kolonu sonradan eklendi, columns_of ile kontrol et
+        has_thumb = "thumbnail_url" in columns_of(conn, "yt_channel_snapshots")
+        thumb_col = ", thumbnail_url" if has_thumb else ""
+        row = conn.execute(f"""
+            SELECT channel_id, channel_title, subscriber_count, view_count, video_count, fetched_at{thumb_col}
             FROM yt_channel_snapshots ORDER BY id DESC LIMIT 1
         """).fetchone()
         if row:
@@ -516,6 +519,7 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 "channel_id": row[0], "channel_title": row[1],
                 "subscriber_count": row[2], "view_count": row[3],
                 "video_count": row[4], "fetched_at": row[5],
+                "thumbnail_url": row[6] if has_thumb and len(row) > 6 else None,
             }
 
     subscriber_timeseries = []
@@ -586,9 +590,10 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 """, (video_id,)).fetchall()
                 daily_history = [
                     {"d": r[0], "views": r[1], "likes": r[2], "comments": r[3],
-                     "shares": r[4], "watch_minutes": r[5], "avg_view_dur": r[6],
-                     "avg_view_pct": r[7], "impressions": r[8], "ctr": r[9],
-                     "subs_gained": r[10]}
+                     "shares": r[4], "estimated_minutes_watched": r[5],
+                     "average_view_duration": r[6], "average_view_percentage": r[7],
+                     "impressions": r[8], "impressions_ctr": r[9],
+                     "subscribers_gained": r[10]}
                     for r in daily_rows
                 ]
 
