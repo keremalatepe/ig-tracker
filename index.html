@@ -558,7 +558,7 @@ let shortsSort = "views";
 let selectedShortId = null;
 let activePlatform = "instagram";
 let activeYtTab = "summary";
-let diffState = { days: 7, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video" };
+let diffState = { days: 7, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video", metric: "views" };
 let ozetRange = 30;
 let ytRange = 30;
 let ytDiffState = { days: 3, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null };
@@ -1057,6 +1057,15 @@ function getPostViewHistory(p) {
     .sort((a, b) => a.t - b.t);
 }
 
+function getPostMetricHistory(p, metric) {
+  if (metric === "views") return getPostViewHistory(p);
+  const rows = (p.history || []).map(x => ({ t: x.t, v: x[metric] }));
+  return rows
+    .map(x => ({ t: parseDate(x.t), iso: x.t, v: Number(x.v) }))
+    .filter(x => Number.isFinite(x.v) && !Number.isNaN(x.t.getTime()))
+    .sort((a, b) => a.t - b.t);
+}
+
 function computePostDiff(p, days = 7) {
   const history = getPostViewHistory(p);
   const generated = DATA && DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
@@ -1093,7 +1102,7 @@ function buildPostDiffPoints(p, diff) {
   if (!diff) return [];
   const startAt = diff.baselineAt && diff.baselineAt > diff.cutoff ? diff.baselineAt : diff.cutoff;
   const points = [{ x: startAt, y: 0 }];
-  for (const item of getPostViewHistory(p)) {
+  for (const item of getPostMetricHistory(p, diffState.metric)) {
     if (item.t < startAt) continue;
     points.push({ x: item.t, y: Math.max(0, item.v - diff.baseline) });
   }
@@ -1400,10 +1409,22 @@ const DIFF_COLORS = ["#168a5b","#2563eb","#b45309","#dc2626","#7c3aed","#0891b2"
 function renderDiff() {
   const isMobile = window.innerWidth < 640;
   const today = new Date().toISOString().split("T")[0];
+  const metricOptions = [
+    "views",
+    "likes",
+    "comments",
+    "shares",
+    "saved",
+    "total_interactions",
+    "follows",
+    "profile_visits",
+    "reach",
+  ];
+  const metricLabel = POST_SORT_LABELS[diffState.metric] || "İzlenme";
   document.getElementById("pane-diff").innerHTML = `
     <details class="diff-filter" id="diff-filter-panel" ${!isMobile ? "open" : ""}>
       <summary>
-        <span>Filtreler — İzlenme Artışı</span>
+        <span>Filtreler — ${esc(metricLabel)} Artışı</span>
         <span style="color:#888;font-size:12px" id="diff-filter-meta"></span>
       </summary>
       <div class="diff-filter-body">
@@ -1429,6 +1450,11 @@ function renderDiff() {
           <div class="diff-field"><label>Grafik eğrisi</label><input id="df-curves" type="number" min="1" max="30" value="${diffState.curveCount}" /></div>
           <div class="diff-field"><label>Min. artış</label><input id="df-min" type="text" inputmode="numeric" placeholder="0" value="${diffState.minDiff ?? ""}" /></div>
           <div class="diff-field"><label>Maks. artış</label><input id="df-max" type="text" inputmode="numeric" placeholder="Boş" value="${diffState.maxDiff ?? ""}" /></div>
+          <div class="diff-field"><label>Metrik</label>
+            <select id="df-metric">
+              ${metricOptions.map(k => `<option value="${k}" ${diffState.metric===k?"selected":""}>${esc(POST_SORT_LABELS[k] || k)}</option>`).join("")}
+            </select>
+          </div>
           <div class="diff-field"><label>İçerik tipi</label>
             <select id="df-type">
               <option value="video" ${diffState.type==="video"?"selected":""}>Video</option>
@@ -1441,11 +1467,11 @@ function renderDiff() {
     </details>
     <div class="card kpi-grid" id="diff-stats" style="gap:8px"></div>
     <div class="card">
-      <h3>En Çok İzlenme Artışı</h3>
+      <h3>En Çok ${esc(metricLabel)} Artışı</h3>
       <div class="chart-wrap"><canvas id="chart-diff-bar"></canvas></div>
     </div>
     <div class="card">
-      <h3>İzlenme Artış Eğrileri</h3>
+      <h3>${esc(metricLabel)} Artış Eğrileri</h3>
       <div class="chart-wrap"><canvas id="chart-diff-line"></canvas></div>
     </div>
     <div class="card" id="diff-results-card">
@@ -1453,7 +1479,7 @@ function renderDiff() {
       <div id="diff-results" class="loading">Hesaplanıyor…</div>
     </div>`;
 
-  ["df-date-from","df-date-to","df-limit","df-curves","df-min","df-max","df-type"].forEach(id => {
+  ["df-date-from","df-date-to","df-limit","df-curves","df-min","df-max","df-metric","df-type"].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.addEventListener("change", updateDiff); el.addEventListener("input", updateDiff); }
   });
@@ -1500,6 +1526,7 @@ function readDiffControls() {
   diffState.curveCount = Math.max(1, Math.min(30, parseInt(g("df-curves").value, 10) || 5));
   diffState.minDiff = parseDiffAmount(g("df-min").value);
   diffState.maxDiff = parseDiffAmount(g("df-max").value);
+  diffState.metric = (g("df-metric") && g("df-metric").value) || "views";
   diffState.type = g("df-type").value;
 }
 
@@ -1518,14 +1545,14 @@ function computeDiffRows() {
   for (const post of DATA.posts || []) {
     if (diffState.type === "reels" && post.product_type !== "REELS") continue;
     if (diffState.type === "video" && post.type !== "VIDEO" && post.product_type !== "REELS") continue;
-    const history = getPostViewHistory(post);
+    const history = getPostMetricHistory(post, diffState.metric);
     let latestValue;
     if (latestCutoff) {
       const atEnd = history.filter(x => x.t <= latestCutoff).pop();
-      latestValue = atEnd ? atEnd.v : (Number.isFinite(Number(post.latest && post.latest.views)) ? Number(post.latest.views) : null);
+      latestValue = atEnd ? atEnd.v : (Number.isFinite(Number(post.latest && post.latest[diffState.metric])) ? Number(post.latest[diffState.metric]) : null);
     } else {
-      latestValue = Number.isFinite(Number(post.latest && post.latest.views))
-        ? Number(post.latest.views)
+      latestValue = Number.isFinite(Number(post.latest && post.latest[diffState.metric]))
+        ? Number(post.latest[diffState.metric])
         : (history[history.length - 1] && history[history.length - 1].v);
     }
     if (!Number.isFinite(latestValue)) continue;
@@ -1556,6 +1583,7 @@ function updateDiff() {
   const sum = allRows.reduce((s, r) => s + r.diff, 0);
   const partials = allRows.filter(r => r.partial).length;
   const typeLabel = { video: "Video", reels: "Reels", all: "Tümü" }[diffState.type] || "Video";
+  const metricLabel = POST_SORT_LABELS[diffState.metric] || "İzlenme";
 
   const statsEl = document.getElementById("diff-stats");
   if (statsEl) statsEl.innerHTML = `
@@ -1568,7 +1596,7 @@ function updateDiff() {
     ? `${fmtDate(diffState.dateFrom)} – ${fmtDate(diffState.dateTo)}`
     : `Son ${diffState.days}g`;
   const metaEl = document.getElementById("diff-filter-meta");
-  if (metaEl) metaEl.textContent = `${rangeLabel} · ${allRows.length} sonuç · ${typeLabel}`;
+  if (metaEl) metaEl.textContent = `${rangeLabel} · ${allRows.length} sonuç · ${typeLabel} · ${metricLabel}`;
 
   if (chartsByTab.diffBar) { try { chartsByTab.diffBar.destroy(); } catch(e){} delete chartsByTab.diffBar; }
   if (chartsByTab.diffLine) { try { chartsByTab.diffLine.destroy(); } catch(e){} delete chartsByTab.diffLine; }
@@ -1586,6 +1614,7 @@ function updateDiff() {
 
 function renderDiffRow(row) {
   const p = row.post;
+  const metricLabel = POST_SORT_LABELS[diffState.metric] || "İzlenme";
   return `
     <button class="diff-row" onclick='openPost(${JSON.stringify(p.id).replace(/'/g,"&#39;")})'>
       ${p.thumbnail ? `<img class="diff-thumb" src="${esc(p.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="diff-thumb"></div>'}
@@ -1594,7 +1623,7 @@ function renderDiffRow(row) {
         <div class="post-date">${esc(p.product_type || p.type || "")} · ${fmtDate(p.posted_at)}</div>
         ${row.partial ? '<span class="diff-flag">eksik başlangıç</span>' : ""}
       </div>
-      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${diffState.dateFrom && diffState.dateTo ? fmtDate(diffState.dateFrom) : diffState.days+"g"}</span></div>
+      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${metricLabel}</span></div>
       <div class="diff-metric diff-base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
       <div class="diff-metric diff-total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
     </button>`;
@@ -1603,11 +1632,12 @@ function renderDiffRow(row) {
 function drawDiffBarChart(rows) {
   const ctx = document.getElementById("chart-diff-bar");
   if (!ctx || !rows.length) return;
+  const metricLabel = POST_SORT_LABELS[diffState.metric] || "İzlenme";
   chartsByTab.diffBar = new Chart(ctx, {
     type: "bar",
     data: {
       labels: rows.map((_, i) => `#${i+1}`),
-      datasets: [{ label: "İzlenme artışı", data: rows.map(r => r.diff),
+      datasets: [{ label: `${metricLabel} artışı`, data: rows.map(r => r.diff),
         backgroundColor: rows.map((_, i) => DIFF_COLORS[i % DIFF_COLORS.length]),
         borderRadius: 5 }]
     },
@@ -1628,6 +1658,7 @@ function drawDiffBarChart(rows) {
 function drawDiffLineChart(rows) {
   const ctx = document.getElementById("chart-diff-line");
   if (!ctx || !rows.length) return;
+  const metricLabel = POST_SORT_LABELS[diffState.metric] || "İzlenme";
   chartsByTab.diffLine = new Chart(ctx, {
     type: "line",
     data: { datasets: rows.map((row, i) => ({
@@ -1649,7 +1680,7 @@ function drawDiffLineChart(rows) {
         }},
         tooltip: { callbacks: {
           title: items => items[0] ? fmtDateTime(new Date(items[0].parsed.x)) : "",
-          label: item => `${item.dataset.label.slice(0,30)}: ${fmtNum(item.parsed.y)}`
+          label: item => `${item.dataset.label.slice(0,30)} (${metricLabel}): ${fmtNum(item.parsed.y)}`
         }}
       },
       scales: {
