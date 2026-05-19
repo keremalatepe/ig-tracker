@@ -244,11 +244,11 @@ class YouTubeFetcher:
     # ── Analytics: tek video, günlük breakdown ──
     def fetch_video_analytics_daily(self, video_id: str, channel_id: str,
                                      start_date: str, end_date: str) -> list:
-        """dimensions=day ile günlük satırlar döndürür. full mode / geçmiş için."""
+        """dimensions=day ile günlük satırlar döndürür. full mode / geçmiş için.
+        Not: impressions/CTR video+day kombinasyonunda desteklenmiyor, çıkarıldı."""
         metrics = ",".join([
-            "views", "likes", "dislikes", "comments", "shares",
+            "views", "likes", "comments", "shares",
             "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
-            "impressions", "impressionsClickThroughRate",
             "subscribersGained", "subscribersLost",
         ])
         data = self._get(f"{ANALYTICS_API_BASE}/reports", {
