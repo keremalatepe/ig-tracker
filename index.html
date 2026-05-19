@@ -412,6 +412,23 @@
   .story-stats { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
   .story-stat { font-size: 10px; color: #555; }
   .story-stat b { color: #1a1a1a; }
+  .breakdown-list { display: grid; gap: 10px; }
+  .breakdown-row {
+    display: grid; gap: 6px; padding: 10px 12px;
+    border: 1px solid #f0f0f0; border-radius: 10px; background: #fcfcfc;
+  }
+  .breakdown-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .breakdown-label { font-size: 13px; font-weight: 700; color: #222; min-width: 0; }
+  .breakdown-value { font-size: 12px; color: #666; white-space: nowrap; }
+  .breakdown-share { font-size: 22px; font-weight: 800; line-height: 1; }
+  .breakdown-note { font-size: 11px; color: #888; }
+  .retention-table { display: grid; gap: 6px; font-size: 12px; }
+  .retention-row {
+    display: grid; grid-template-columns: 80px 1fr 110px; gap: 10px;
+    align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f1f1;
+  }
+  .retention-row:last-child { border-bottom: 0; }
+  .retention-row.head { font-size: 11px; font-weight: 800; color: #888; text-transform: uppercase; }
 
   @media (max-width: 680px) {
     body { overflow-x: hidden; }
@@ -507,6 +524,8 @@
       font-size: 11px;
     }
     .top-update span:last-child { white-space: normal; }
+    .retention-row { grid-template-columns: 56px 1fr 84px; gap: 8px; }
+    .breakdown-share { font-size: 18px; }
   }
 </style>
 </head>
@@ -2280,35 +2299,33 @@ function ytReportLabel(reportKey, row) {
   return firstValue;
 }
 
-function drawYtSimpleBarChart(canvasId, rows, reportKey, metricKey, color) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx || !rows.length) return;
-  chartsByTab[canvasId] = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: rows.map(row => ytReportLabel(reportKey, row)),
-      datasets: [{
-        label: metricKey === "estimatedMinutesWatched" ? "İzlenme Süresi" : "İzlenme",
-        data: rows.map(row => Number(row[metricKey] || 0)),
-        backgroundColor: color,
-        borderRadius: 6,
-        maxBarThickness: 28,
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { ticks: { maxRotation: 0, autoSkip: false, font: { size: 10 } } },
-        y: { ticks: { callback: v => fmtShort(v), font: { size: 10 } } },
-      },
-    },
-  });
+function renderYtBreakdownCard(title, rows, reportKey, color, metricKey = "views") {
+  if (!rows.length) return "";
+  const total = rows.reduce((sum, row) => sum + (Number(row[metricKey]) || 0), 0);
+  const sorted = [...rows].sort((a, b) => (Number(b[metricKey]) || 0) - (Number(a[metricKey]) || 0));
+  return `
+    <div class="card">
+      <h3>${esc(title)}</h3>
+      <div class="breakdown-list">
+        ${sorted.map(row => {
+          const value = Number(row[metricKey]) || 0;
+          const pct = total > 0 ? (value / total) * 100 : 0;
+          const labelColor = total > 0 ? color : "#555";
+          return `<div class="breakdown-row">
+            <div class="breakdown-head">
+              <span class="breakdown-label">${esc(ytReportLabel(reportKey, row))}</span>
+              <span class="breakdown-value">${fmtNum(value)}</span>
+            </div>
+            <div class="breakdown-share" style="color:${labelColor}">%${pct.toFixed(1)}</div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="breakdown-note">Paylar, secilen rapordaki toplam goruntuleme uzerinden hesaplanir.</div>
+    </div>`;
 }
 
-function drawYtRetentionChart(canvasId, rows) {
-  const ctx = document.getElementById(canvasId);
-  if (!ctx || !rows.length) return;
+function renderYtRetentionCard(rows) {
+  if (!rows.length) return "";
   const points = rows
     .map(row => {
       const dim = parseReportDimension(row.dimension);
@@ -2319,38 +2336,22 @@ function drawYtRetentionChart(canvasId, rows) {
       };
     })
     .filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
-    .sort((a, b) => a.x - b.x);
-  chartsByTab[canvasId] = new Chart(ctx, {
-    type: "line",
-    data: {
-      datasets: [{
-        label: "Audience Watch Ratio",
-        data: points.map(point => ({ x: point.x, y: point.y })),
-        borderColor: "#cc0000",
-        backgroundColor: "rgba(204,0,0,0.1)",
-        fill: true,
-        tension: 0.25,
-        pointRadius: 0,
-        borderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            title: items => `${Math.round(items[0].parsed.x * 100)}% video`,
-            label: item => `İzleyici oranı: ${(item.parsed.y * 100).toFixed(1)}%`,
-          },
-        },
-      },
-      scales: {
-        x: { ticks: { callback: v => `${Math.round(v * 100)}%`, font: { size: 10 } } },
-        y: { ticks: { callback: v => `${Math.round(v * 100)}%`, font: { size: 10 } } },
-      },
-    },
-  });
+    .sort((a, b) => a.x - b.x)
+    .slice(0, 12);
+  return `
+    <div class="card">
+      <h3>Retention</h3>
+      <div class="retention-table">
+        <div class="retention-row head"><span>An</span><span>Izleyici Orani</span><span>Goreli Guc</span></div>
+        ${points.map(point => `
+          <div class="retention-row">
+            <span>${Math.round(point.x * 100)}%</span>
+            <span>%${(point.y * 100).toFixed(1)}</span>
+            <span>${point.r ? point.r.toFixed(2) : "-"}</span>
+          </div>`).join("")}
+      </div>
+      <div class="breakdown-note">Izleyici orani ana metrik, goreli guc ise YouTube'un benzer videolara gore karsilastirma sinyalidir.</div>
+    </div>`;
 }
 
 function renderYtAnaliz() {
@@ -2363,26 +2364,19 @@ function renderYtAnaliz() {
   const retention = ytReportRows("retention");
   const rangeLabel = analytics.range_start && analytics.range_end
     ? `${fmtDate(analytics.range_start)} - ${fmtDate(analytics.range_end)}`
-    : "Son 30 gün";
+    : "Son 30 gun";
   document.getElementById("pane-yt-analiz").innerHTML = `
     <div class="card">
       <h3>YouTube Analiz</h3>
-      <div class="list-meta">Aralık: ${rangeLabel} · Shorts odaklı kanal raporu</div>
+      <div class="list-meta">Aralik: ${rangeLabel} - Shorts odakli kanal raporu</div>
     </div>
-    ${traffic.length ? `<div class="card"><h3>Trafik Kaynakları</h3><div class="chart-wrap"><canvas id="chart-yt-traffic"></canvas></div></div>` : ""}
-    ${subscribed.length ? `<div class="card"><h3>Abone Olan / Olmayan</h3><div class="chart-wrap"><canvas id="chart-yt-subscribed"></canvas></div></div>` : ""}
-    ${devices.length ? `<div class="card"><h3>Cihaz Türleri</h3><div class="chart-wrap"><canvas id="chart-yt-devices"></canvas></div></div>` : ""}
-    ${countries.length ? `<div class="card"><h3>Ülke Dağılımı</h3><div class="chart-wrap"><canvas id="chart-yt-countries"></canvas></div></div>` : ""}
-    ${retention.length ? `<div class="card"><h3>Retention Eğrisi</h3><div class="chart-wrap"><canvas id="chart-yt-retention"></canvas></div></div>` : ""}
-    ${Object.keys(reports).length ? "" : '<div class="card"><div class="empty">Henüz ek YouTube analiz verisi yok.</div></div>'}
+    ${renderYtBreakdownCard("Trafik Kaynaklari", traffic, "traffic_source", "#cc0000")}
+    ${renderYtBreakdownCard("Abone Olan / Olmayan", subscribed, "subscribed_status", "#ef4444")}
+    ${renderYtBreakdownCard("Cihaz Turleri", devices, "device_type", "#f97316")}
+    ${renderYtBreakdownCard("Ulke Dagilimi", countries, "country", "#2563eb")}
+    ${renderYtRetentionCard(retention)}
+    ${Object.keys(reports).length ? "" : '<div class="card"><div class="empty">Henuz ek YouTube analiz verisi yok.</div></div>'}
   `;
-  setTimeout(() => {
-    if (traffic.length) drawYtSimpleBarChart("chart-yt-traffic", traffic, "traffic_source", "views", "#cc0000");
-    if (subscribed.length) drawYtSimpleBarChart("chart-yt-subscribed", subscribed, "subscribed_status", "views", "#ef4444");
-    if (devices.length) drawYtSimpleBarChart("chart-yt-devices", devices, "device_type", "views", "#f97316");
-    if (countries.length) drawYtSimpleBarChart("chart-yt-countries", countries, "country", "views", "#2563eb");
-    if (retention.length) drawYtRetentionChart("chart-yt-retention", retention);
-  }, 50);
 }
 
 // ─── Özet (combined) ───────────────────────────────────────────────────────
