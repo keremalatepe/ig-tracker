@@ -136,6 +136,23 @@ def migrate(conn: sqlite3.Connection):
     )
     """)
 
+    log.info("yt_channel_report_rows tablosu...")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS yt_channel_report_rows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fetched_at TEXT NOT NULL,
+        range_start TEXT NOT NULL,
+        range_end TEXT NOT NULL,
+        report_type TEXT NOT NULL,
+        dimension TEXT NOT NULL,
+        metric_key TEXT NOT NULL,
+        metric_value REAL,
+        UNIQUE(fetched_at, report_type, dimension, metric_key)
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_report_rows_fetch ON yt_channel_report_rows(fetched_at)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_report_rows_type ON yt_channel_report_rows(report_type)")
+
     conn.commit()
     log.info("Migration tamamlandı.")
 

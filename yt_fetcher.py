@@ -51,6 +51,7 @@ ANALYTICS_API_BASE = "https://youtubeanalytics.googleapis.com/v2"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 HOURLY_LOOKBACK_DAYS = 14
+CHANNEL_ANALYTICS_LOOKBACK_DAYS = 30
 REQUEST_DELAY_SECONDS = 0.2
 
 logging.basicConfig(
@@ -327,6 +328,37 @@ class YouTubeFetcher:
         col_names = [h["name"] for h in data.get("columnHeaders", [])]
         return dict(zip(col_names, rows[0]))
 
+    def fetch_channel_breakdown(
+        self,
+        channel_id: str,
+        start_date: str,
+        end_date: str,
+        metrics: list[str],
+        dimensions: list[str],
+        filters: list[str] | None = None,
+        sort: list[str] | None = None,
+        max_results: int | None = None,
+    ) -> list[dict]:
+        params = {
+            "ids": f"channel=={channel_id}",
+            "startDate": start_date,
+            "endDate": end_date,
+            "metrics": ",".join(metrics),
+            "dimensions": ",".join(dimensions),
+        }
+        if filters:
+            params["filters"] = ";".join(filters)
+        if sort:
+            params["sort"] = ",".join(sort)
+        if max_results:
+            params["maxResults"] = max_results
+        data = self._get(f"{ANALYTICS_API_BASE}/reports", params)
+        if "error" in data:
+            log.debug(f"  Channel breakdown alınamadı ({dimensions}): {data['error']}")
+            return []
+        headers = [h["name"] for h in data.get("columnHeaders", [])]
+        return [dict(zip(headers, row)) for row in data.get("rows", [])]
+
 
 # ─── Veritabanı işlemleri ──────────────────────────────────
 def insert_channel_snapshot(conn: sqlite3.Connection, fetched_at: str, channel: dict):
@@ -478,6 +510,46 @@ def insert_video_daily(conn: sqlite3.Connection, video_id: str, row: dict):
     ))
 
 
+def replace_channel_report_rows(
+    conn: sqlite3.Connection,
+    fetched_at: str,
+    range_start: str,
+    range_end: str,
+    report_type: str,
+    rows: list[dict],
+    dimensions: list[str],
+):
+    conn.execute(
+        "DELETE FROM yt_channel_report_rows WHERE fetched_at = ? AND report_type = ?",
+        (fetched_at, report_type),
+    )
+    for row in rows:
+        dim_parts = []
+        for key in dimensions:
+            value = row.get(key)
+            if value is not None:
+                dim_parts.append(f"{key}={value}")
+        dimension_value = " | ".join(dim_parts) if dim_parts else "all"
+        for key, value in row.items():
+            if key in dimensions:
+                continue
+            try:
+                metric_value = float(value)
+            except (TypeError, ValueError):
+                continue
+            conn.execute("""
+            INSERT INTO yt_channel_report_rows (
+                fetched_at, range_start, range_end, report_type, dimension, metric_key, metric_value
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(fetched_at, report_type, dimension, metric_key) DO UPDATE SET
+                metric_value=excluded.metric_value,
+                range_start=excluded.range_start,
+                range_end=excluded.range_end
+            """, (
+                fetched_at, range_start, range_end, report_type, dimension_value, key, metric_value
+            ))
+
+
 def get_cursor(conn: sqlite3.Connection, key: str) -> str | None:
     row = conn.execute("SELECT value FROM yt_fetch_cursors WHERE key = ?", (key,)).fetchone()
     return row[0] if row else None
@@ -525,6 +597,71 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
     insert_channel_snapshot(conn, fetched_at, channel)
     log.info(f"  #{channel['channel_title']} | Abone: {channel['subscriber_count']} | "
              f"Video: {channel['video_count']}")
+
+    analytics_start = (datetime.now(timezone.utc) - timedelta(days=CHANNEL_ANALYTICS_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    analytics_end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    report_configs = [
+        {
+            "report_type": "traffic_source",
+            "dimensions": ["insightTrafficSourceType"],
+            "metrics": ["views", "estimatedMinutesWatched"],
+            "filters": ["creatorContentType==SHORTS"],
+            "sort": ["-views"],
+            "max_results": 12,
+        },
+        {
+            "report_type": "subscribed_status",
+            "dimensions": ["subscribedStatus"],
+            "metrics": ["views", "estimatedMinutesWatched"],
+            "filters": ["creatorContentType==SHORTS"],
+            "sort": ["-views"],
+            "max_results": 10,
+        },
+        {
+            "report_type": "device_type",
+            "dimensions": ["deviceType"],
+            "metrics": ["views", "estimatedMinutesWatched"],
+            "filters": ["creatorContentType==SHORTS"],
+            "sort": ["-views"],
+            "max_results": 10,
+        },
+        {
+            "report_type": "country",
+            "dimensions": ["country"],
+            "metrics": ["views", "estimatedMinutesWatched"],
+            "filters": ["creatorContentType==SHORTS"],
+            "sort": ["-views"],
+            "max_results": 12,
+        },
+        {
+            "report_type": "retention",
+            "dimensions": ["elapsedVideoTimeRatio"],
+            "metrics": ["audienceWatchRatio", "relativeRetentionPerformance"],
+            "filters": ["creatorContentType==SHORTS"],
+            "sort": ["elapsedVideoTimeRatio"],
+            "max_results": 20,
+        },
+    ]
+    for config in report_configs:
+        rows = fetcher.fetch_channel_breakdown(
+            channel_id=channel_id,
+            start_date=analytics_start,
+            end_date=analytics_end,
+            metrics=config["metrics"],
+            dimensions=config["dimensions"],
+            filters=config.get("filters"),
+            sort=config.get("sort"),
+            max_results=config.get("max_results"),
+        )
+        replace_channel_report_rows(
+            conn,
+            fetched_at,
+            analytics_start,
+            analytics_end,
+            config["report_type"],
+            rows,
+            config["dimensions"],
+        )
 
     # Video listesi
     published_after = None

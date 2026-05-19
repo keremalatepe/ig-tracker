@@ -626,10 +626,43 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 "daily_history": daily_history,
             })
 
+    analytics_reports = {}
+    if _yt_safe(conn, "yt_channel_report_rows"):
+        latest_fetch_row = conn.execute("""
+            SELECT fetched_at, range_start, range_end
+            FROM yt_channel_report_rows
+            ORDER BY fetched_at DESC
+            LIMIT 1
+        """).fetchone()
+        if latest_fetch_row:
+            latest_fetch, range_start, range_end = latest_fetch_row
+            rows = conn.execute("""
+                SELECT report_type, dimension, metric_key, metric_value
+                FROM yt_channel_report_rows
+                WHERE fetched_at = ?
+                ORDER BY report_type, dimension, metric_key
+            """, (latest_fetch,)).fetchall()
+            grouped: dict[str, dict[str, dict[str, float]]] = {}
+            for report_type, dimension, metric_key, metric_value in rows:
+                grouped.setdefault(report_type, {}).setdefault(dimension, {})[metric_key] = metric_value
+            analytics_reports = {
+                "fetched_at": latest_fetch,
+                "range_start": range_start,
+                "range_end": range_end,
+                "reports": {
+                    report_type: [
+                        {"dimension": dimension, **metrics}
+                        for dimension, metrics in dims.items()
+                    ]
+                    for report_type, dims in grouped.items()
+                },
+            }
+
     return {
         "channel": channel,
         "subscriber_timeseries": subscriber_timeseries,
         "shorts": shorts,
+        "analytics_reports": analytics_reports,
     }
 
 
