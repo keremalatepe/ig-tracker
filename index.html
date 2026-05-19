@@ -1705,6 +1705,8 @@ function drawDiffLineChart(rows) {
 function renderYoutubeView(platformTabsHtml) {
   const yt = (DATA && DATA.youtube) || {};
   const ch = yt.channel || {};
+  const shorts = yt.shorts || [];
+  const totalShortViews = shorts.reduce((sum, short) => sum + (Number((short.latest || {}).views) || 0), 0);
   const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
   const ytTabs = [
     { id: "summary", label: "Özet" },
@@ -1726,7 +1728,7 @@ function renderYoutubeView(platformTabsHtml) {
         <div class="hdr-stats">
           <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
           <span><b>${fmtNum(ch.video_count)}</b> video</span>
-          <span><b>${fmtShort(ch.view_count)}</b> izlenme</span>
+          <span><b>${fmtShort(totalShortViews)}</b> izlenme</span>
         </div>
       </div>
       <button class="refresh-btn" onclick="load()">↻ Yenile</button>
