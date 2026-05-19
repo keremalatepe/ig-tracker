@@ -354,10 +354,13 @@ class YouTubeFetcher:
             params["maxResults"] = max_results
         data = self._get(f"{ANALYTICS_API_BASE}/reports", params)
         if "error" in data:
-            log.debug(f"  Channel breakdown alınamadı ({dimensions}): {data['error']}")
+            log.warning(f"  Channel breakdown alınamadı ({dimensions}): {data['error']}")
             return []
         headers = [h["name"] for h in data.get("columnHeaders", [])]
-        return [dict(zip(headers, row)) for row in data.get("rows", [])]
+        rows = [dict(zip(headers, row)) for row in data.get("rows", [])]
+        if not rows:
+            log.warning(f"  Channel breakdown boş döndü ({dimensions}, filters={filters})")
+        return rows
 
 
 # ─── Veritabanı işlemleri ──────────────────────────────────
@@ -653,6 +656,20 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
             sort=config.get("sort"),
             max_results=config.get("max_results"),
         )
+        if not rows and config.get("filters"):
+            fallback_filters = [flt for flt in config["filters"] if flt != "creatorContentType==SHORTS"]
+            if fallback_filters != config["filters"]:
+                log.warning(f"  {config['report_type']} için SHORTS filtresi boş döndü, filtre olmadan tekrar deneniyor.")
+                rows = fetcher.fetch_channel_breakdown(
+                    channel_id=channel_id,
+                    start_date=analytics_start,
+                    end_date=analytics_end,
+                    metrics=config["metrics"],
+                    dimensions=config["dimensions"],
+                    filters=fallback_filters or None,
+                    sort=config.get("sort"),
+                    max_results=config.get("max_results"),
+                )
         replace_channel_report_rows(
             conn,
             fetched_at,
