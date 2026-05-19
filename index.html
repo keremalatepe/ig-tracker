@@ -194,6 +194,25 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  .yt-hdr {
+    background: linear-gradient(135deg, #ff0000 0%, #cc0000 100%);
+  }
+  .badge-short { background: #fee2e2; color: #991b1b; }
+  .short-thumb-wrap { position: relative; aspect-ratio: 9/16; background: #111; overflow: hidden; border-radius: 8px 8px 0 0; }
+  .short-thumb-wrap img { width: 100%; height: 100%; object-fit: cover; }
+  .short-thumb-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-size: 28px; color: #555; }
+  .shorts-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+  @media (min-width: 480px) { .shorts-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (min-width: 640px) { .shorts-grid { grid-template-columns: repeat(4, 1fr); } }
+  .short-card { background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; overflow: hidden; cursor: pointer; }
+  .short-card:hover { border-color: #ccc; }
+  .short-info { padding: 6px 8px 8px; }
+  .short-title { font-size: 12px; color: #222; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+  .short-date { font-size: 10px; color: #888; margin-top: 3px; }
+  .short-stats { display: flex; gap: 8px; margin-top: 5px; flex-wrap: wrap; }
+  .short-stat { font-size: 10px; color: #555; }
+  .short-stat b { color: #1a1a1a; }
+
   .footer-info { text-align: center; font-size: 11px; color: #aaa; margin: 16px 0 8px; }
   .top-update {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -352,7 +371,17 @@ let accountMetrics = ["reach", "total_interactions", "profile_views"];
 let postsPage = 1;
 let reelsPage = 1;
 let storiesPage = 1;
+let shortsPage = 1;
+let shortsSort = "views";
+let selectedShortId = null;
 const PAGE_SIZE = 20;
+
+const YT_SORT_LABELS = {
+  views: "İzlenme", likes: "Beğeni", comments: "Yorum", shares: "Paylaşım",
+  average_view_percentage: "İzl. %", estimated_minutes_watched: "İzl. Süresi",
+  subscribers_gained: "Abone Kazanım", impressions: "Gösterim",
+  impressions_ctr: "CTR", posted_at: "Tarih",
+};
 
 const ACCOUNT_METRIC_LABELS = {
   reach: "Erişim", profile_views: "Profil Z.", total_interactions: "Etkileşim",
@@ -382,7 +411,7 @@ const POST_SORT_LABELS = {
   posted_at: "Tarih",
 };
 
-const allowedTabs = new Set(["summary", "posts", "reels", "stories", "account", "demo", "runs"]);
+const allowedTabs = new Set(["summary", "posts", "reels", "stories", "account", "demo", "runs", "youtube"]);
 const requestedTab = new URLSearchParams(location.search).get("tab");
 const requestedPost = new URLSearchParams(location.search).get("post");
 if (requestedTab && allowedTabs.has(requestedTab)) activeTab = requestedTab;
@@ -498,11 +527,13 @@ function render() {
   if (profile.profile_picture_url)
     avatarHtml = `<img src="${profile.profile_picture_url}" alt="" onerror="this.style.display='none'" />`;
 
+  const hasYoutube = !!(DATA && DATA.youtube && DATA.youtube.channel && DATA.youtube.channel.channel_id);
   const tabs = [
     { id: "summary", label: "Özet" }, { id: "posts", label: "İçerikler" },
     { id: "reels", label: "Reels" }, { id: "stories", label: "Stories" },
     ...(showAccountTab ? [{ id: "account", label: "Hesap" }] : []),
     { id: "demo", label: "Demografik" }, { id: "runs", label: "Çalışmalar" },
+    ...(hasYoutube ? [{ id: "youtube", label: "▶ YouTube" }] : []),
   ];
 
   document.getElementById("root").innerHTML = `
@@ -548,6 +579,7 @@ function renderPane(tab) {
   else if (tab === "account") renderAccount();
   else if (tab === "demo") renderDemo();
   else if (tab === "runs") renderRuns();
+  else if (tab === "youtube") renderYoutube();
 }
 
 function renderSummary() {
@@ -1136,6 +1168,215 @@ function renderRuns() {
           <div style="color:#888;text-align:right">${fmtDateTime(r.started)}<br><span style="font-size:10px">${r.posts||0} post · ${r.stories||0} story · ${r.api_requests||0} API req</span></div>
         </div>`).join("")}
     </div>`;
+}
+
+function ytShortSortValue(s, key) {
+  const l = s.latest || {};
+  if (key === "posted_at") return s.published_at || "";
+  return Number(l[key]) || 0;
+}
+
+function renderYoutube() {
+  const yt = (DATA && DATA.youtube) || {};
+  const ch = yt.channel || {};
+  const shorts = [...(yt.shorts || [])].sort((a, b) => {
+    if (shortsSort === "posted_at") return (b.published_at || "").localeCompare(a.published_at || "");
+    return ytShortSortValue(b, shortsSort) - ytShortSortValue(a, shortsSort);
+  });
+  const subSeries = yt.subscriber_timeseries || [];
+  const totalViews = shorts.reduce((s, x) => s + (Number((x.latest||{}).views) || 0), 0);
+  const page = shortsPage;
+  const totalPages = Math.max(1, Math.ceil(shorts.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  if (safePage !== page) { shortsPage = safePage; }
+  const pageItems = shorts.slice((safePage-1)*PAGE_SIZE, safePage*PAGE_SIZE);
+
+  document.getElementById("pane-youtube").innerHTML = `
+    <div class="card">
+      <div class="hdr yt-hdr" style="margin-bottom:0;border-radius:10px">
+        <div class="hdr-avatar" style="background:rgba(255,255,255,0.2);font-size:20px">▶</div>
+        <div class="hdr-info">
+          <p class="hdr-name">${esc(ch.channel_title || "—")}</p>
+          <div class="hdr-stats">
+            <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
+            <span><b>${fmtNum(ch.video_count)}</b> video</span>
+            <span><b>${fmtShort(totalViews)}</b> toplam izl.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    ${subSeries.length ? `
+    <div class="card">
+      <h3>Abone Trendi</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-subs"></canvas></div>
+    </div>` : ""}
+    <div class="card">
+      <h3>Shorts (${shorts.length})</h3>
+      <div class="sort-bar">
+        ${Object.entries(YT_SORT_LABELS).map(([k,v]) => `<button class="${shortsSort===k?'active':''}" onclick="setShortsSort('${k}')">${v}</button>`).join("")}
+      </div>
+      <div class="shorts-grid">
+        ${pageItems.map(s => {
+          const l = s.latest || {};
+          return `<div class="short-card" onclick="openShort('${esc(s.id)}')">
+            <div class="short-thumb-wrap">
+              ${s.thumbnail
+                ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" onerror="this.parentElement.innerHTML='<div class=short-thumb-placeholder>▶</div>'" />`
+                : '<div class="short-thumb-placeholder">▶</div>'}
+            </div>
+            <div class="short-info">
+              <div class="short-title">${esc(s.title || "")}</div>
+              <div class="short-date">${fmtDate(s.published_at)}</div>
+              <div class="short-stats">
+                ${l.views != null ? `<span class="short-stat"><b>${fmtShort(l.views)}</b> izl</span>` : ""}
+                ${l.likes != null ? `<span class="short-stat"><b>${fmtShort(l.likes)}</b> ♥</span>` : ""}
+                ${l.average_view_percentage != null ? `<span class="short-stat"><b>${l.average_view_percentage.toFixed(0)}%</b> izl%</span>` : ""}
+              </div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      ${shorts.length > PAGE_SIZE ? `
+        <div class="pager">
+          <div class="pager-info">Sayfa ${safePage}/${totalPages} · ${shorts.length} Short</div>
+          <div class="pager-actions">
+            <button onclick="setShortsPage(${safePage-1})" ${safePage<=1?"disabled":""}>Önceki</button>
+            <button onclick="setShortsPage(${safePage+1})" ${safePage>=totalPages?"disabled":""}>Sonraki</button>
+          </div>
+        </div>` : ""}
+    </div>`;
+
+  if (subSeries.length) {
+    const ctx = document.getElementById("chart-yt-subs");
+    if (ctx) {
+      chartsByTab.ytSubs = new Chart(ctx, {
+        type: "line",
+        data: { datasets: [{ label: "Abone", data: subSeries.map(p => ({ x: new Date(p.t), y: p.v })),
+          borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.1)", fill: true,
+          tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: "nearest", axis: "x", intersect: false },
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { type: "time", time: { unit: "day", displayFormats: { day: "d MMM" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+            y: { ticks: { font: { size: 10 } } }
+          }
+        }
+      });
+    }
+  }
+}
+
+function setShortsSort(k) { shortsSort = k; shortsPage = 1; renderYoutube(); }
+function setShortsPage(p) { shortsPage = Math.max(1, p); renderYoutube(); }
+
+function openShort(id) {
+  const yt = (DATA && DATA.youtube) || {};
+  const s = (yt.shorts || []).find(x => x.id === id);
+  if (!s) return;
+  const l = s.latest || {};
+  const daily = s.daily_history || [];
+  const hourly = s.history || [];
+
+  const stats = [
+    ["İzlenme", fmtNum(l.views)],
+    ["Beğeni", fmtNum(l.likes)],
+    ["Yorum", fmtNum(l.comments)],
+    ["Paylaşım", fmtNum(l.shares)],
+    ["İzl. Yüzdesi", l.average_view_percentage != null ? l.average_view_percentage.toFixed(1) + "%" : "—"],
+    ["Ort. İzl. Süresi", l.average_view_duration != null ? l.average_view_duration + "s" : "—"],
+    ["Toplam İzl. Dakika", fmtNum(l.estimated_minutes_watched)],
+    ["Gösterim", fmtNum(l.impressions)],
+    ["CTR", l.impressions_ctr != null ? (l.impressions_ctr * 100).toFixed(2) + "%" : "—"],
+    ["Abone Kazanım", fmtNum(l.subscribers_gained)],
+    ["Abone Kayıp", fmtNum(l.subscribers_lost)],
+  ];
+
+  const modal = document.getElementById("modal-content");
+  modal.innerHTML = `
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div class="modal-hdr">
+      ${s.thumbnail ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" style="width:56px;height:100px;object-fit:cover;border-radius:8px" />` : ""}
+      <div style="flex:1;min-width:0">
+        <span class="badge badge-short">SHORT</span>
+        <div style="font-size:14px;font-weight:700;margin-top:6px;line-height:1.3">${esc(s.title||"")}</div>
+        <div class="post-date" style="margin-top:4px">${fmtDate(s.published_at)} · ${s.duration_seconds}s</div>
+        <div class="detail-actions">
+          <a class="detail-link" href="https://www.youtube.com/shorts/${esc(s.id)}" target="_blank" rel="noopener">YouTube'da aç</a>
+        </div>
+      </div>
+    </div>
+    <div class="kpi-grid" style="margin-bottom:12px">
+      ${stats.filter(([,v]) => v !== "—").map(([k,v]) => `<div class="kpi"><div class="kpi-label">${k}</div><div class="kpi-value" style="font-size:16px">${v}</div></div>`).join("")}
+    </div>
+    ${daily.length ? `
+    <div class="detail-section">
+      <h3>Günlük Geçmiş</h3>
+      <div class="metric-toggle" id="yt-daily-metric-toggle">
+        ${["views","likes","average_view_percentage","subscribers_gained"].map((k,i) =>
+          `<button class="metric-btn${i===0?' active':''}" onclick="setYtDailyMetric('${k}',this)">${YT_SORT_LABELS[k]||k}</button>`
+        ).join("")}
+      </div>
+      <div class="chart-wrap"><canvas id="chart-yt-daily"></canvas></div>
+    </div>` : ""}
+    ${hourly.length ? `
+    <div class="detail-section">
+      <h3>Saatlik Snapshot (Gün İçi Takip)</h3>
+      <div class="detail-table">
+        <div class="detail-row head"><span>Zaman</span><span>İzl.</span><span>Beğ.</span><span>İzl.%</span><span>Göst.</span></div>
+        ${hourly.slice(-8).reverse().map(h => `<div class="detail-row">
+          <span>${fmtDateTime(h.t)}</span>
+          <span>${fmtNum(h.views)}</span>
+          <span>${fmtNum(h.likes)}</span>
+          <span>${h.avg_view_pct != null ? h.avg_view_pct.toFixed(1)+"%" : "—"}</span>
+          <span>${fmtNum(h.impressions)}</span>
+        </div>`).join("")}
+      </div>
+    </div>` : ""}`;
+
+  document.getElementById("modal-bg").classList.add("open");
+  document.body.style.overflow = "hidden";
+
+  if (daily.length) {
+    setTimeout(() => drawYtDailyChart(daily, "views"), 50);
+  }
+}
+
+let _ytDailyData = null;
+function setYtDailyMetric(key, btn) {
+  document.querySelectorAll("#yt-daily-metric-toggle .metric-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  if (_ytDailyData) drawYtDailyChart(_ytDailyData, key);
+}
+
+function drawYtDailyChart(daily, metric) {
+  _ytDailyData = daily;
+  const ctx = document.getElementById("chart-yt-daily");
+  if (!ctx) return;
+  if (chartsByTab.ytDaily) { try { chartsByTab.ytDaily.destroy(); } catch(e){} }
+  chartsByTab.ytDaily = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: daily.map(d => d.d),
+      datasets: [{ label: YT_SORT_LABELS[metric]||metric,
+        data: daily.map(d => d[metric] || 0),
+        backgroundColor: "#cc0000", borderRadius: 4, maxBarThickness: 28 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => fmtDate(items[0].label),
+        label: item => `${YT_SORT_LABELS[metric]||metric}: ${metric==="average_view_percentage" ? item.parsed.y.toFixed(1)+"%" : fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { ticks: { maxRotation: 0, maxTicksLimit: 8, font: { size: 10 },
+          callback: (_, i) => { const d = new Date(daily[i].d+"T00:00:00"); return d.toLocaleDateString("tr-TR",{day:"2-digit",month:"short"}); }
+        }},
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
 }
 
 async function load() {
