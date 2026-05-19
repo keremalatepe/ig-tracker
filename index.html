@@ -1972,7 +1972,7 @@ function renderYtDiff() {
       <div id="yt-diff-results" class="loading">Hesaplanıyor…</div>
     </div>`;
 
-  ["yt-df-date-from", "yt-df-date-to", "yt-df-limit", "yt-df-curves", "yt-df-min", "yt-df-max"].forEach(id => {
+  ["yt-df-date-from", "yt-df-date-to", "yt-df-limit", "yt-df-curves", "yt-df-min", "yt-df-max", "yt-df-metric"].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.addEventListener("change", updateYtDiff); el.addEventListener("input", updateYtDiff); }
   });
@@ -2051,6 +2051,8 @@ function updateYtDiff() {
     ? `${fmtDate(ytDiffState.dateFrom)} – ${fmtDate(ytDiffState.dateTo)}`
     : `Son ${ytDiffState.days}g`;
   const ytDiffMetricLabel = YT_SORT_LABELS[ytDiffState.metric] || "İzlenme";
+  const summaryTitleEl = document.querySelector("#pane-yt-diff details.diff-filter > summary > span:first-child");
+  if (summaryTitleEl) summaryTitleEl.textContent = `${ytDiffMetricLabel} artışı`;
   const metaEl = document.getElementById("yt-diff-filter-meta");
   if (metaEl) metaEl.textContent = `${rangeLabel} · ${ytDiffMetricLabel} · ${fmtNum(ytDiffState.limit)} sonuç · ${fmtNum(ytDiffState.curveCount)} eğri`;
   const statsEl = document.getElementById("yt-diff-stats");
