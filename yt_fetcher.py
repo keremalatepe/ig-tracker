@@ -169,13 +169,14 @@ class YouTubeFetcher:
 
         return {"error": {"message": "Tüm denemeler başarısız"}}
 
-    def fetch_public_video_view_count(self, video_id: str) -> int | None:
-        """Public Shorts page shows the count users actually see on YouTube."""
+    def fetch_public_video_stats(self, video_id: str) -> dict:
+        """Public Shorts page shows the live counters users actually see."""
         headers = {"User-Agent": "Mozilla/5.0"}
         urls = [
             f"https://www.youtube.com/shorts/{video_id}",
             f"https://www.youtube.com/watch?v={video_id}",
         ]
+        stats = {"publicViews": None, "publicLikes": None}
         for url in urls:
             try:
                 resp = requests.get(url, headers=headers, timeout=30)
@@ -183,12 +184,19 @@ class YouTubeFetcher:
                 if REQUEST_DELAY_SECONDS:
                     time.sleep(REQUEST_DELAY_SECONDS)
                 resp.raise_for_status()
-                match = re.search(r'"viewCount":"(\d+)"', resp.text)
-                if match:
-                    return int(match.group(1))
+                if stats["publicViews"] is None:
+                    match = re.search(r'"viewCount":"(\d+)"', resp.text)
+                    if match:
+                        stats["publicViews"] = int(match.group(1))
+                if stats["publicLikes"] is None:
+                    like_match = re.search(r'"likeCount":"(\d+)"', resp.text)
+                    if like_match:
+                        stats["publicLikes"] = int(like_match.group(1))
+                if stats["publicViews"] is not None and stats["publicLikes"] is not None:
+                    break
             except requests.exceptions.RequestException as exc:
                 log.debug(f"Public view scrape başarısız ({video_id}): {exc}")
-        return None
+        return stats
 
     # ── Kanal bilgisi ──
     def fetch_channel(self) -> dict:
@@ -399,16 +407,19 @@ def insert_video_snapshot(conn: sqlite3.Connection, fetched_at: str,
 def merge_video_snapshot_metrics(
     video_item: dict,
     analytics: dict | None,
-    public_views: int | None = None,
+    public_stats: dict | None = None,
 ) -> dict:
     """Keep analytics totals, but store public Shorts views separately."""
     analytics = dict(analytics or {})
     stats = (video_item or {}).get("statistics", {}) or {}
+    public_stats = dict(public_stats or {})
     analytics["views"] = analytics.get("engagedViews", analytics.get("views"))
-    analytics["publicViews"] = public_views
-    if analytics.get("likes") is None and stats.get("likeCount") is not None:
+    analytics["publicViews"] = public_stats.get("publicViews")
+    if public_stats.get("publicLikes") is not None:
+        analytics["likes"] = public_stats.get("publicLikes")
+    elif stats.get("likeCount") is not None:
         analytics["likes"] = stats.get("likeCount")
-    if analytics.get("comments") is None and stats.get("commentCount") is not None:
+    if stats.get("commentCount") is not None:
         analytics["comments"] = stats.get("commentCount")
     return analytics
 
@@ -533,7 +544,7 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
     for i, item in enumerate(shorts_items, 1):
         video_id = item["id"]
         try:
-            public_views = fetcher.fetch_public_video_view_count(video_id)
+            public_stats = fetcher.fetch_public_video_stats(video_id)
             if mode == "full":
                 # Tüm geçmişi günlük granülasyonda çek
                 published = item.get("snippet", {}).get("publishedAt", "2020-01-01")[:10]
@@ -544,13 +555,13 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
                     insert_video_daily(conn, video_id, row)
                 # Ayrıca anlık snapshot da al
                 analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-                snapshot = merge_video_snapshot_metrics(item, analytics, public_views)
+                snapshot = merge_video_snapshot_metrics(item, analytics, public_stats)
                 insert_video_snapshot(conn, fetched_at, video_id, snapshot)
                 log.debug(f"  {video_id}: {len(daily_rows)} günlük kayıt")
             else:
                 # hourly: sadece anlık snapshot
                 analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-                snapshot = merge_video_snapshot_metrics(item, analytics, public_views)
+                snapshot = merge_video_snapshot_metrics(item, analytics, public_stats)
                 insert_video_snapshot(conn, fetched_at, video_id, snapshot)
             count += 1
         except Exception as e:

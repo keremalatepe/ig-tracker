@@ -2188,6 +2188,8 @@ function renderOzet(updatedAt) {
 
   const rangeButtons = `
     <div class="range-sel">
+      <button class="${ozetRange===1?'active':''}" onclick="setOzetRange(1)">1g</button>
+      <button class="${ozetRange===3?'active':''}" onclick="setOzetRange(3)">3g</button>
       <button class="${ozetRange===7?'active':''}" onclick="setOzetRange(7)">7g</button>
       <button class="${ozetRange===30?'active':''}" onclick="setOzetRange(30)">30g</button>
       <button class="${ozetRange===90?'active':''}" onclick="setOzetRange(90)">90g</button>
