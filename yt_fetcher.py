@@ -215,6 +215,7 @@ class YouTubeFetcher:
         return {
             "channel_id": item["id"],
             "channel_title": snippet.get("title"),
+            "channel_handle": snippet.get("customUrl"),  # e.g. "@aybiksbites"
             "thumbnail_url": thumbnail_url,
             "subscriber_count": int(stats.get("subscriberCount", 0) or 0),
             "view_count": int(stats.get("viewCount", 0) or 0),
@@ -333,8 +334,8 @@ def insert_channel_snapshot(conn: sqlite3.Connection, fetched_at: str, channel: 
     INSERT INTO yt_channel_snapshots (
         fetched_at, channel_id, channel_title,
         subscriber_count, view_count, video_count, hidden_subscriber_count,
-        thumbnail_url
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        thumbnail_url, channel_handle
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         fetched_at,
         channel.get("channel_id"),
@@ -344,6 +345,7 @@ def insert_channel_snapshot(conn: sqlite3.Connection, fetched_at: str, channel: 
         channel.get("video_count"),
         channel.get("hidden_subscriber_count"),
         channel.get("thumbnail_url"),
+        channel.get("channel_handle"),
     ))
 
 
@@ -543,26 +545,31 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
     count = 0
     for i, item in enumerate(shorts_items, 1):
         video_id = item["id"]
+        # Her zaman videonun yayınlanma tarihini kullan → tüm zamanların toplam izlenmesi
+        published = item.get("snippet", {}).get("publishedAt", "2020-01-01")[:10]
         try:
             public_stats = fetcher.fetch_public_video_stats(video_id)
+
             if mode == "full":
-                # Tüm geçmişi günlük granülasyonda çek
-                published = item.get("snippet", {}).get("publishedAt", "2020-01-01")[:10]
+                # Tüm geçmişi günlük granülasyonda çek (yayın tarihinden bugüne)
                 daily_rows = fetcher.fetch_video_analytics_daily(
                     video_id, channel_id, published, end_date
                 )
-                for row in daily_rows:
-                    insert_video_daily(conn, video_id, row)
-                # Ayrıca anlık snapshot da al
-                analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-                snapshot = merge_video_snapshot_metrics(item, analytics, public_stats)
-                insert_video_snapshot(conn, fetched_at, video_id, snapshot)
                 log.debug(f"  {video_id}: {len(daily_rows)} günlük kayıt")
             else:
-                # hourly: sadece anlık snapshot
-                analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-                snapshot = merge_video_snapshot_metrics(item, analytics, public_stats)
-                insert_video_snapshot(conn, fetched_at, video_id, snapshot)
+                # hourly: son HOURLY_LOOKBACK_DAYS günlük veriyi güncelle
+                hourly_start = (datetime.now(timezone.utc) - timedelta(days=HOURLY_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+                daily_rows = fetcher.fetch_video_analytics_daily(
+                    video_id, channel_id, hourly_start, end_date
+                )
+            for row in daily_rows:
+                insert_video_daily(conn, video_id, row)
+
+            # Her iki modda da: LIFETIME aggregate snapshot (published → today)
+            # Bu sayede views = tüm zamanların toplam izlenmesi, sadece 14 günlük değil
+            analytics = fetcher.fetch_video_analytics(video_id, channel_id, published, end_date)
+            snapshot = merge_video_snapshot_metrics(item, analytics, public_stats)
+            insert_video_snapshot(conn, fetched_at, video_id, snapshot)
             count += 1
         except Exception as e:
             log.warning(f"  Video atlandı ({video_id}): {e}")

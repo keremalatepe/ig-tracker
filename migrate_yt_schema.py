@@ -47,6 +47,7 @@ def migrate(conn: sqlite3.Connection):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_channel_fetched ON yt_channel_snapshots(fetched_at)")
     add_column_if_missing(cur, "yt_channel_snapshots", "thumbnail_url", "TEXT")
+    add_column_if_missing(cur, "yt_channel_snapshots", "channel_handle", "TEXT")
 
     log.info("yt_videos tablosu...")
     cur.execute("""

@@ -1712,16 +1712,17 @@ function renderYoutubeView(platformTabsHtml) {
   const chAvatarHtml = ch.thumbnail_url
     ? `<img src="${esc(ch.thumbnail_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.style.display='none'" />`
     : `<span style="font-size:22px">▶</span>`;
-  const ytHandle = ch.handle || ch.custom_url || "@aybiksbites";
+  const ytHandle = ch.channel_handle || ch.handle || ch.custom_url || null;
   document.getElementById("root").innerHTML = platformTabsHtml + `
     <div class="hdr yt-hdr">
       <div class="hdr-avatar" style="background:rgba(255,255,255,0.2)">${chAvatarHtml}</div>
       <div class="hdr-info">
         <p class="hdr-name">${esc(ch.channel_title || "—")}</p>
-        <p class="hdr-user">${esc(String(ytHandle).startsWith("@") ? ytHandle : "@" + ytHandle)}</p>
+        ${ytHandle ? `<p class="hdr-user">${esc(String(ytHandle).startsWith("@") ? ytHandle : "@" + ytHandle)}</p>` : ""}
         <div class="hdr-stats">
           <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
           <span><b>${fmtNum(ch.video_count)}</b> video</span>
+          <span><b>${fmtShort(ch.view_count)}</b> izlenme</span>
         </div>
       </div>
       <button class="refresh-btn" onclick="load()">↻ Yenile</button>

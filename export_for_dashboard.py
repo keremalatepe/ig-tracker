@@ -508,18 +508,23 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
     channel = {}
     if _yt_safe(conn, "yt_channel_snapshots"):
         # thumbnail_url kolonu sonradan eklendi, columns_of ile kontrol et
-        has_thumb = "thumbnail_url" in columns_of(conn, "yt_channel_snapshots")
+        cols_ch = columns_of(conn, "yt_channel_snapshots")
+        has_thumb = "thumbnail_url" in cols_ch
+        has_handle = "channel_handle" in cols_ch
         thumb_col = ", thumbnail_url" if has_thumb else ""
+        handle_col = ", channel_handle" if has_handle else ""
         row = conn.execute(f"""
-            SELECT channel_id, channel_title, subscriber_count, view_count, video_count, fetched_at{thumb_col}
+            SELECT channel_id, channel_title, subscriber_count, view_count, video_count, fetched_at{thumb_col}{handle_col}
             FROM yt_channel_snapshots ORDER BY id DESC LIMIT 1
         """).fetchone()
         if row:
+            idx = 6
             channel = {
                 "channel_id": row[0], "channel_title": row[1],
                 "subscriber_count": row[2], "view_count": row[3],
                 "video_count": row[4], "fetched_at": row[5],
-                "thumbnail_url": row[6] if has_thumb and len(row) > 6 else None,
+                "thumbnail_url": row[idx] if has_thumb else None,
+                "channel_handle": row[idx + (1 if has_thumb else 0)] if has_handle else None,
             }
 
     subscriber_timeseries = []
