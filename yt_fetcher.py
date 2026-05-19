@@ -76,7 +76,7 @@ def parse_duration(iso: str) -> int:
 
 
 def is_short(duration_seconds: int, title: str = "", description: str = "") -> bool:
-    if duration_seconds <= 0 or duration_seconds > 60:
+    if duration_seconds <= 0 or duration_seconds > 180:
         return False
     return True
 
@@ -169,6 +169,27 @@ class YouTubeFetcher:
 
         return {"error": {"message": "Tüm denemeler başarısız"}}
 
+    def fetch_public_video_view_count(self, video_id: str) -> int | None:
+        """Public Shorts page shows the count users actually see on YouTube."""
+        headers = {"User-Agent": "Mozilla/5.0"}
+        urls = [
+            f"https://www.youtube.com/shorts/{video_id}",
+            f"https://www.youtube.com/watch?v={video_id}",
+        ]
+        for url in urls:
+            try:
+                resp = requests.get(url, headers=headers, timeout=30)
+                self.request_count += 1
+                if REQUEST_DELAY_SECONDS:
+                    time.sleep(REQUEST_DELAY_SECONDS)
+                resp.raise_for_status()
+                match = re.search(r'"viewCount":"(\d+)"', resp.text)
+                if match:
+                    return int(match.group(1))
+            except requests.exceptions.RequestException as exc:
+                log.debug(f"Public view scrape başarısız ({video_id}): {exc}")
+        return None
+
     # ── Kanal bilgisi ──
     def fetch_channel(self) -> dict:
         data = self._get(f"{DATA_API_BASE}/channels", {
@@ -250,7 +271,7 @@ class YouTubeFetcher:
         """dimensions=day ile günlük satırlar döndürür. full mode / geçmiş için.
         Not: impressions/CTR video+day kombinasyonunda desteklenmiyor, çıkarıldı."""
         metrics = ",".join([
-            "views", "likes", "comments", "shares",
+            "views", "engagedViews", "likes", "comments", "shares",
             "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
             "subscribersGained", "subscribersLost",
         ])
@@ -274,7 +295,7 @@ class YouTubeFetcher:
     def fetch_video_analytics(self, video_id: str, channel_id: str,
                                start_date: str, end_date: str) -> dict:
         metrics = ",".join([
-            "views", "likes", "comments", "shares",
+            "views", "engagedViews", "likes", "comments", "shares",
             "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
             "subscribersGained", "subscribersLost",
         ])
@@ -360,19 +381,36 @@ def insert_video_snapshot(conn: sqlite3.Connection, fetched_at: str,
     conn.execute("""
     INSERT INTO yt_video_snapshots (
         fetched_at, video_id,
-        views, likes, comments, shares,
+        views, public_views, likes, comments, shares,
         estimated_minutes_watched, average_view_duration, average_view_percentage,
         impressions, impressions_ctr,
         subscribers_gained, subscribers_lost
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         fetched_at, video_id,
-        _int("views"), _int("likes"), _int("comments"), _int("shares"),
+        _int("views"), _int("publicViews"), _int("likes"), _int("comments"), _int("shares"),
         _int("estimatedMinutesWatched"), _int("averageViewDuration"),
         _float("averageViewPercentage"),
         _int("impressions"), _float("impressionsClickThroughRate"),
         _int("subscribersGained"), _int("subscribersLost"),
     ))
+
+
+def merge_video_snapshot_metrics(
+    video_item: dict,
+    analytics: dict | None,
+    public_views: int | None = None,
+) -> dict:
+    """Keep analytics totals, but store public Shorts views separately."""
+    analytics = dict(analytics or {})
+    stats = (video_item or {}).get("statistics", {}) or {}
+    analytics["views"] = analytics.get("engagedViews", analytics.get("views"))
+    analytics["publicViews"] = public_views
+    if analytics.get("likes") is None and stats.get("likeCount") is not None:
+        analytics["likes"] = stats.get("likeCount")
+    if analytics.get("comments") is None and stats.get("commentCount") is not None:
+        analytics["comments"] = stats.get("commentCount")
+    return analytics
 
 
 def insert_video_daily(conn: sqlite3.Connection, video_id: str, row: dict):
@@ -429,6 +467,16 @@ def log_fetch_run(conn: sqlite3.Connection, started_at: str, completed_at: str,
     """, (started_at, completed_at, mode, status, videos, requests, error))
 
 
+def get_known_short_ids(conn: sqlite3.Connection) -> list[str]:
+    rows = conn.execute("""
+        SELECT video_id
+        FROM yt_videos
+        WHERE is_short = 1
+        ORDER BY published_at DESC
+    """).fetchall()
+    return [row[0] for row in rows]
+
+
 # ─── Çalışma modları ───────────────────────────────────────
 def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
               fetched_at: str, mode: str) -> int:
@@ -455,6 +503,8 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
         log.info("[yt] Tüm videolar çekiliyor (full mode)...")
 
     video_ids = fetcher.fetch_channel_videos(channel_id, published_after)
+    if mode == "hourly":
+        video_ids = list(dict.fromkeys(video_ids + get_known_short_ids(conn)))
     if not video_ids:
         log.info("[yt] Video bulunamadı.")
         return 0
@@ -483,6 +533,7 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
     for i, item in enumerate(shorts_items, 1):
         video_id = item["id"]
         try:
+            public_views = fetcher.fetch_public_video_view_count(video_id)
             if mode == "full":
                 # Tüm geçmişi günlük granülasyonda çek
                 published = item.get("snippet", {}).get("publishedAt", "2020-01-01")[:10]
@@ -493,12 +544,14 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
                     insert_video_daily(conn, video_id, row)
                 # Ayrıca anlık snapshot da al
                 analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-                insert_video_snapshot(conn, fetched_at, video_id, analytics)
+                snapshot = merge_video_snapshot_metrics(item, analytics, public_views)
+                insert_video_snapshot(conn, fetched_at, video_id, snapshot)
                 log.debug(f"  {video_id}: {len(daily_rows)} günlük kayıt")
             else:
                 # hourly: sadece anlık snapshot
                 analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-                insert_video_snapshot(conn, fetched_at, video_id, analytics)
+                snapshot = merge_video_snapshot_metrics(item, analytics, public_views)
+                insert_video_snapshot(conn, fetched_at, video_id, snapshot)
             count += 1
         except Exception as e:
             log.warning(f"  Video atlandı ({video_id}): {e}")

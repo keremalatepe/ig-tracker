@@ -221,6 +221,111 @@
   .ptab-ig.active { background: linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045); color: #fff; }
   .ptab-yt.active { background: #ff0000; color: #fff; }
   .ptab-ozet.active { background: #1a1a1a; color: #fff; }
+  .summary-duo-banner {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0;
+    overflow: hidden;
+    border-radius: 14px;
+    background: linear-gradient(90deg, #833ab4 0%, #fd1d1d 48%, #ff0000 100%);
+    color: #fff;
+    margin-bottom: 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 14px 28px rgba(131,58,180,0.12);
+  }
+  .summary-banner-side {
+    min-width: 0;
+    padding: 14px;
+    position: relative;
+  }
+  .summary-banner-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+  }
+  .summary-banner-main.is-right {
+    flex-direction: row-reverse;
+  }
+  .summary-banner-avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.16);
+    border: 1px solid rgba(255,255,255,0.28);
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 700;
+  }
+  .summary-banner-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .summary-banner-copy {
+    min-width: 0;
+    flex: 1;
+  }
+  .summary-banner-copy.is-right {
+    text-align: right;
+  }
+  .summary-banner-side + .summary-banner-side {
+    border-left: 1px solid rgba(255,255,255,0.16);
+  }
+  .summary-banner-label {
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.82;
+  }
+  .summary-banner-name {
+    margin-top: 4px;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+  .summary-banner-handle {
+    margin-top: 3px;
+    font-size: 12px;
+    opacity: 0.9;
+  }
+  .summary-banner-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .summary-banner-copy.is-right .summary-banner-stats {
+    justify-content: end;
+  }
+  .summary-banner-copy.is-right .summary-banner-stat {
+    text-align: right;
+  }
+  .summary-banner-stat {
+    min-width: 0;
+    padding: 10px;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(10px);
+  }
+  .summary-banner-stat b {
+    display: block;
+    font-size: 18px;
+    line-height: 1.15;
+    overflow-wrap: anywhere;
+  }
+  .summary-banner-stat span {
+    display: block;
+    margin-top: 3px;
+    font-size: 11px;
+    opacity: 0.85;
+    text-transform: uppercase;
+  }
   .short-info { padding: 6px 8px 8px; }
   .short-title { font-size: 12px; color: #222; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
   .short-date { font-size: 10px; color: #888; margin-top: 3px; }
@@ -344,6 +449,13 @@
     .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .kpi { min-width: 0; padding: 9px; }
     .kpi-value { font-size: 19px; overflow-wrap: anywhere; }
+    .summary-duo-banner { grid-template-columns: 1fr; }
+    .summary-banner-side + .summary-banner-side { border-left: 0; border-top: 1px solid rgba(255,255,255,0.16); }
+    .summary-banner-side { padding: 12px; }
+    .summary-banner-main.is-right { flex-direction: row; }
+    .summary-banner-copy.is-right { text-align: left; }
+    .summary-banner-copy.is-right .summary-banner-stat { text-align: left; }
+    .summary-banner-name { font-size: 16px; }
     .range-sel button { padding: 5px 9px; }
     .metric-btn { padding: 5px 9px; }
     .sort-bar {
@@ -740,7 +852,7 @@ function renderSummary() {
 }
 
 function setFollowerRange(d) { followerRange = d; renderSummary(); }
-function setOzetRange(d) { ozetRange = d; renderOzet(); }
+function setOzetRange(d) { ozetRange = d; renderOzet(DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—"); }
 
 function computeYtDailyViews(shorts, rangeDays) {
   const byDate = {};
@@ -1437,7 +1549,7 @@ function computeDiffRows() {
 }
 
 function updateDiff() {
-  if (!document.getElementById("df-days")) return; // pane not rendered
+  if (!document.getElementById("df-limit")) return; // pane not rendered
   readDiffControls();
   const allRows = computeDiffRows();
   const rows = allRows.slice(0, diffState.limit);
@@ -1685,7 +1797,7 @@ function renderYtSummary() {
       <div class="kpi-grid">
         <div class="kpi"><div class="kpi-label">Abone</div><div class="kpi-value">${fmtNum(ch.subscriber_count)}</div></div>
         <div class="kpi"><div class="kpi-label">Son ${ytRange}g Abone</div><div class="kpi-value">${fmtNum(subChange)}</div>${deltaHtml(subChange)}</div>
-        <div class="kpi"><div class="kpi-label">Son ${ytRange}g İzlenme</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div></div>
+        <div class="kpi"><div class="kpi-label">Son ${ytRange}g Analytics</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div></div>
         <div class="kpi"><div class="kpi-label">Shorts Toplam</div><div class="kpi-value">${fmtShort(totalShortViews)}</div></div>
       </div>
     </div>
@@ -1696,7 +1808,7 @@ function renderYtSummary() {
     </div>` : ""}
     ${dailyViews.length ? `
     <div class="card">
-      <h3>Günlük İzlenme</h3>
+      <h3>Günlük Analytics</h3>
       <div class="chart-wrap"><canvas id="chart-yt-summary-views"></canvas></div>
     </div>` : '<div class="card"><div class="empty">Henüz günlük izlenme verisi yok.</div></div>'}
     <div class="card">
@@ -1706,7 +1818,7 @@ function renderYtSummary() {
 
   setTimeout(() => {
     if (subSeries.length) drawYtSubscriberChart("chart-yt-summary-subs", subSeries, ytRange);
-    if (dailyViews.length) drawYtDailyViewsChart("chart-yt-summary-views", dailyViews, "Günlük İzlenme");
+    if (dailyViews.length) drawYtDailyViewsChart("chart-yt-summary-views", dailyViews, "Günlük Analytics");
   }, 50);
 }
 
@@ -2027,17 +2139,17 @@ function renderYtHesap() {
     </div>` : ""}
     ${dailyViews.length ? `
     <div class="card">
-      <h3>Günlük İzlenme</h3>
+      <h3>Günlük Analytics</h3>
       <div class="chart-wrap"><canvas id="chart-yt-account-views"></canvas></div>
     </div>` : ""}`;
 
   if (subSeries.length) {
     setTimeout(() => {
       drawYtSubscriberChart("chart-yt-subs", subSeries, ytRange);
-      if (dailyViews.length) drawYtDailyViewsChart("chart-yt-account-views", dailyViews, "Günlük İzlenme");
+      if (dailyViews.length) drawYtDailyViewsChart("chart-yt-account-views", dailyViews, "Günlük Analytics");
     }, 50);
   } else if (dailyViews.length) {
-    setTimeout(() => drawYtDailyViewsChart("chart-yt-account-views", dailyViews, "Günlük İzlenme"), 50);
+    setTimeout(() => drawYtDailyViewsChart("chart-yt-account-views", dailyViews, "Günlük Analytics"), 50);
   }
 }
 
@@ -2046,18 +2158,23 @@ function renderYtHesap() {
 function renderOzetView(platformTabsHtml) {
   const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
   document.getElementById("root").innerHTML = platformTabsHtml + `
-    <div class="top-update">
-      <span>Son güncelleme: <b>${updated}</b></span>
-    </div>
     <div id="pane-ozet"></div>`;
-  renderOzet();
+  renderOzet(updated);
 }
 
-function renderOzet() {
+function renderOzet(updatedAt) {
+  const resolvedUpdatedAt = updatedAt || (DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—");
   const p = DATA.profile || {};
   const yt = (DATA && DATA.youtube) || {};
   const ch = yt.channel || {};
+  const ytHandle = ch.handle || ch.custom_url || "@aybiksbites";
   const shorts = yt.shorts || [];
+  const igAvatar = p.profile_picture_url
+    ? `<img src="${esc(p.profile_picture_url)}" alt="" onerror="this.style.display='none'" />`
+    : `<span>${esc(((p.username || p.name || "I")[0] || "I").toUpperCase())}</span>`;
+  const ytAvatar = ch.thumbnail_url
+    ? `<img src="${esc(ch.thumbnail_url)}" alt="" onerror="this.style.display='none'" />`
+    : `<span>▶</span>`;
   const totalYtViews = shorts.reduce((s, x) => s + (Number((x.latest||{}).views) || 0), 0);
   const subSeries = yt.subscriber_timeseries || [];
 
@@ -2078,6 +2195,39 @@ function renderOzet() {
     </div>`;
 
   document.getElementById("pane-ozet").innerHTML = `
+    <div class="summary-duo-banner">
+      <div class="summary-banner-side">
+        <div class="summary-banner-main">
+          <div class="summary-banner-avatar">${igAvatar}</div>
+          <div class="summary-banner-copy">
+            <div class="summary-banner-label">Instagram</div>
+            <div class="summary-banner-name">${esc(p.name || p.username || "Instagram")}</div>
+            <div class="summary-banner-handle">@${esc(p.username || "aybiksbites")}</div>
+            <div class="summary-banner-stats">
+              <div class="summary-banner-stat"><b>${fmtNum(p.followers_count)}</b><span>Takipçi</span></div>
+              <div class="summary-banner-stat"><b>${fmtNum(p.media_count)}</b><span>İçerik</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="summary-banner-side">
+        <div class="summary-banner-main is-right">
+          <div class="summary-banner-avatar">${ytAvatar}</div>
+          <div class="summary-banner-copy is-right">
+            <div class="summary-banner-label">YouTube</div>
+            <div class="summary-banner-name">${esc(ch.channel_title || "Aybiksbites")}</div>
+            <div class="summary-banner-handle">${esc(String(ytHandle).startsWith("@") ? ytHandle : "@" + ytHandle)}</div>
+            <div class="summary-banner-stats">
+              <div class="summary-banner-stat"><b>${fmtNum(ch.subscriber_count)}</b><span>Abone</span></div>
+              <div class="summary-banner-stat"><b>${fmtNum(shorts.length)}</b><span>Shorts</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="top-update">
+      <span>Son güncelleme: <b>${resolvedUpdatedAt}</b></span>
+    </div>
     <div class="card">
       <h3>Zaman Aralığı</h3>
       ${rangeButtons}
@@ -2120,7 +2270,7 @@ function renderOzet() {
     </div>` : ""}
     ${ytDailyViews.length ? `
     <div class="card">
-      <h3>YT Günlük İzlenme (Shorts)</h3>
+      <h3>YT Günlük Analytics (Shorts)</h3>
       <div class="kpi-grid" style="margin-bottom:10px">
         <div class="kpi"><div class="kpi-label">Son ${ozetRange}g toplam</div><div class="kpi-value">${fmtNum(totalYtDailyViews)}</div></div>
       </div>
@@ -2209,7 +2359,7 @@ function drawOzetYtViewsChart(series) {
     type: "bar",
     data: {
       labels: series.map(x => x.d),
-      datasets: [{ label: "Günlük İzlenme (Shorts)", data: series.map(x => x.v || 0), backgroundColor: "#cc0000", borderRadius: 4, maxBarThickness: 28 }]
+      datasets: [{ label: "Günlük Analytics (Shorts)", data: series.map(x => x.v || 0), backgroundColor: "#cc0000", borderRadius: 4, maxBarThickness: 28 }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -2289,18 +2439,29 @@ function setShortsSort(k) { shortsSort = k; shortsPage = 1; renderYtShorts(); }
 function setShortsPage(p) { shortsPage = Math.max(1, p); renderYtShorts(); }
 
 function buildShortViewsHistory(s) {
-  // YouTube Analytics daily rows are daily deltas. Anchor them to the latest
-  // lifetime view count so the chart reads as a true cumulative total.
+  const hourly = (s.history || [])
+    .map(x => ({ x: parseDate(x.t), y: Number(x.views) }))
+    .filter(x => Number.isFinite(x.y) && x.y > 0 && !isNaN(x.x.getTime()))
+    .sort((a, b) => a.x - b.x);
+  if (hourly.length >= 2) return hourly;
+
+  // Fall back to analytics deltas only when they are reasonably aligned with
+  // the latest visible Shorts count. Otherwise we prefer a sparse but honest
+  // public snapshot history over a misleading reconstructed line.
   const daily = [...(s.daily_history || [])].sort((a, b) => (a.d||"").localeCompare(b.d||""));
   const latestViews = Number(s.latest && s.latest.views);
   if (daily.length) {
-    const totalDaily = daily.reduce((sum, d) => sum + (Number(d.views) || 0), 0);
+    const totalDaily = daily.reduce((sum, d) => sum + (Number(d.engaged_views ?? d.views) || 0), 0);
+    if (Number.isFinite(latestViews) && totalDaily > 0) {
+      const ratio = latestViews / totalDaily;
+      if (ratio < 0.8 || ratio > 1.25) return hourly;
+    }
     let cumulative = Number.isFinite(latestViews) ? Math.max(0, latestViews - totalDaily) : 0;
     const points = [];
     const firstDate = daily[0].d;
     if (firstDate) points.push({ x: new Date(firstDate + "T00:00:00"), y: cumulative });
     for (const d of daily) {
-      cumulative += Number(d.views) || 0;
+      cumulative += Number(d.engaged_views ?? d.views) || 0;
       points.push({ x: new Date(d.d + "T23:59:59"), y: cumulative });
     }
     const latestAt = parseDate((s.latest && s.latest.fetched_at) || (DATA && DATA.generated_at) || new Date());
@@ -2310,11 +2471,6 @@ function buildShortViewsHistory(s) {
     return points.filter(p => !isNaN(p.x.getTime())).sort((a, b) => a.x - b.x);
   }
 
-  // Hourly snapshots are cumulative totals.
-  const hourly = (s.history || [])
-    .map(x => ({ x: parseDate(x.t), y: Number(x.views) }))
-    .filter(x => Number.isFinite(x.y) && x.y > 0 && !isNaN(x.x.getTime()))
-    .sort((a, b) => a.x - b.x);
   return hourly;
 }
 
@@ -2324,7 +2480,7 @@ function openShort(id) {
   if (!s) return;
   const l = s.latest || {};
   const daily = s.daily_history || [];
-  const hourly = s.history || [];
+  const hourly = (s.history || []).filter(h => Number.isFinite(Number(h.views)));
   const dailyMetricOptions = ytDailyMetricOptions(daily);
 
   const stats = [
@@ -2365,7 +2521,7 @@ function openShort(id) {
     </div>
     ${daily.length && dailyMetricOptions.length ? `
     <div class="detail-section">
-      <h3>Günlük Geçmiş</h3>
+      <h3>Günlük Analytics Geçmişi</h3>
       <div class="metric-toggle" id="yt-daily-metric-toggle">
         ${dailyMetricOptions.map((k,i) =>
           `<button class="metric-btn${i===0?' active':''}" onclick="setYtDailyMetric('${k}',this)">${YT_SORT_LABELS[k]||k}</button>`

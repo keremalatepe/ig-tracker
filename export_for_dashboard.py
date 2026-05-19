@@ -545,7 +545,7 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
             video_id, title, published_at, thumbnail, duration = vrow
 
             snap = conn.execute("""
-                SELECT views, likes, comments, shares,
+                SELECT views, public_views, likes, comments, shares,
                        estimated_minutes_watched, average_view_duration,
                        average_view_percentage, impressions, impressions_ctr,
                        subscribers_gained, subscribers_lost, fetched_at
@@ -556,15 +556,18 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
 
             latest = {}
             if snap:
-                keys = ["views", "likes", "comments", "shares",
+                keys = ["engaged_views", "public_views", "likes", "comments", "shares",
                         "estimated_minutes_watched", "average_view_duration",
                         "average_view_percentage", "impressions", "impressions_ctr",
                         "subscribers_gained", "subscribers_lost", "fetched_at"]
                 latest = dict(zip(keys, snap))
+                latest["views"] = latest.get("public_views")
+                if latest.get("views") is None:
+                    latest["views"] = latest.get("engaged_views")
 
             # Saatlik snapshot geçmişi (gün içi takip)
             history_rows = conn.execute("""
-                SELECT fetched_at, views, likes, comments, shares,
+                SELECT fetched_at, views, public_views, likes, comments, shares,
                        estimated_minutes_watched, average_view_duration,
                        average_view_percentage, impressions, impressions_ctr,
                        subscribers_gained, subscribers_lost
@@ -573,11 +576,12 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 ORDER BY id DESC LIMIT 30
             """, (video_id,)).fetchall()
             history = [
-                {"t": h[0], "views": h[1], "likes": h[2], "comments": h[3],
-                 "shares": h[4], "estimated_minutes_watched": h[5],
-                 "average_view_duration": h[6], "average_view_percentage": h[7],
-                 "impressions": h[8], "impressions_ctr": h[9],
-                 "subscribers_gained": h[10], "subscribers_lost": h[11]}
+                {"t": h[0], "views": h[2] if h[2] is not None else h[1], "engaged_views": h[1],
+                 "public_views": h[2], "likes": h[3], "comments": h[4],
+                 "shares": h[5], "estimated_minutes_watched": h[6],
+                 "average_view_duration": h[7], "average_view_percentage": h[8],
+                 "impressions": h[9], "impressions_ctr": h[10],
+                 "subscribers_gained": h[11], "subscribers_lost": h[12]}
                 for h in reversed(history_rows)
             ]
 
@@ -594,8 +598,9 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                     ORDER BY date
                 """, (video_id,)).fetchall()
                 daily_history = [
-                    {"d": r[0], "views": r[1], "likes": r[2], "comments": r[3],
-                     "shares": r[4], "estimated_minutes_watched": r[5],
+                    {"d": r[0], "views": r[1], "engaged_views": r[1],
+                     "likes": r[2], "comments": r[3], "shares": r[4],
+                     "estimated_minutes_watched": r[5],
                      "average_view_duration": r[6], "average_view_percentage": r[7],
                      "impressions": r[8], "impressions_ctr": r[9],
                      "subscribers_gained": r[10]}

@@ -71,6 +71,7 @@ def migrate(conn: sqlite3.Connection):
         fetched_at TEXT NOT NULL,
         video_id TEXT NOT NULL,
         views INTEGER,
+        public_views INTEGER,
         likes INTEGER,
         comments INTEGER,
         shares INTEGER,
@@ -86,6 +87,7 @@ def migrate(conn: sqlite3.Connection):
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_snap_video ON yt_video_snapshots(video_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_snap_fetched ON yt_video_snapshots(fetched_at)")
+    add_column_if_missing(cur, "yt_video_snapshots", "public_views", "INTEGER")
 
     log.info("yt_video_daily tablosu...")
     cur.execute("""
