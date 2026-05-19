@@ -561,7 +561,7 @@ let activeYtTab = "summary";
 let diffState = { days: 7, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video", metric: "views" };
 let ozetRange = 30;
 let ytRange = 30;
-let ytDiffState = { days: 3, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null };
+let ytDiffState = { days: 3, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, metric: "views" };
 const PAGE_SIZE = 20;
 
 const YT_SORT_LABELS = {
@@ -1924,10 +1924,12 @@ function renderYtDiff() {
   const rangeLabel = ytDiffState.dateFrom && ytDiffState.dateTo
     ? `${fmtDate(ytDiffState.dateFrom)} – ${fmtDate(ytDiffState.dateTo)}`
     : `Son ${ytDiffState.days} gün`;
+  const ytDiffMetrics = ["views","likes","comments","shares","subscribers_gained","average_view_percentage","estimated_minutes_watched"];
+  const metricLabel = YT_SORT_LABELS[ytDiffState.metric] || "İzlenme";
   document.getElementById("pane-yt-diff").innerHTML = `
     <details class="diff-filter" open>
       <summary>
-        <span>İzlenme artışı</span>
+        <span>${metricLabel} artışı</span>
         <span id="yt-diff-filter-meta" style="font-size:12px;color:#888;font-weight:600">${rangeLabel}</span>
       </summary>
       <div class="diff-filter-body">
@@ -1948,12 +1950,17 @@ function renderYtDiff() {
           <div class="diff-field"><label>Grafikteki içerik</label><input id="yt-df-curves" type="number" min="1" max="30" value="${ytDiffState.curveCount}" /></div>
           <div class="diff-field"><label>Min. artış</label><input id="yt-df-min" type="text" inputmode="numeric" placeholder="0" value="${ytDiffState.minDiff ?? ""}" /></div>
           <div class="diff-field"><label>Maks. artış</label><input id="yt-df-max" type="text" inputmode="numeric" placeholder="Boş" value="${ytDiffState.maxDiff ?? ""}" /></div>
+          <div class="diff-field"><label>Metrik</label>
+            <select id="yt-df-metric">
+              ${ytDiffMetrics.map(k => `<option value="${k}" ${ytDiffState.metric===k?"selected":""}>${esc(YT_SORT_LABELS[k] || k)}</option>`).join("")}
+            </select>
+          </div>
         </div>
       </div>
     </details>
     <div class="card kpi-grid" id="yt-diff-stats" style="gap:8px"></div>
     <div class="card">
-      <h3>En Çok İzlenme Artışı</h3>
+      <h3>En Çok ${metricLabel} Artışı</h3>
       <div class="chart-wrap"><canvas id="chart-yt-diff-bar"></canvas></div>
     </div>
     <div class="card">
@@ -1994,6 +2001,7 @@ function readYtDiffControls() {
   ytDiffState.curveCount = Math.max(1, Math.min(30, parseInt(g("yt-df-curves").value, 10) || 5));
   ytDiffState.minDiff = parseDiffAmount(g("yt-df-min").value);
   ytDiffState.maxDiff = parseDiffAmount(g("yt-df-max").value);
+  ytDiffState.metric = (g("yt-df-metric") && g("yt-df-metric").value) || "views";
 }
 
 function computeYtDiffRows() {
@@ -2010,7 +2018,7 @@ function computeYtDiffRows() {
   }
   const rows = [];
   for (const short of yt.shorts || []) {
-    const points = buildShortViewsHistory(short);
+    const points = buildShortMetricHistory(short, ytDiffState.metric);
     if (!points.length) continue;
     const baseline = metricValueAt(points, startAt);
     const latest = metricValueAt(points, endAt);
@@ -2042,8 +2050,9 @@ function updateYtDiff() {
   const rangeLabel = ytDiffState.dateFrom && ytDiffState.dateTo
     ? `${fmtDate(ytDiffState.dateFrom)} – ${fmtDate(ytDiffState.dateTo)}`
     : `Son ${ytDiffState.days}g`;
+  const ytDiffMetricLabel = YT_SORT_LABELS[ytDiffState.metric] || "İzlenme";
   const metaEl = document.getElementById("yt-diff-filter-meta");
-  if (metaEl) metaEl.textContent = `${rangeLabel} · ${fmtNum(ytDiffState.limit)} sonuç · ${fmtNum(ytDiffState.curveCount)} eğri`;
+  if (metaEl) metaEl.textContent = `${rangeLabel} · ${ytDiffMetricLabel} · ${fmtNum(ytDiffState.limit)} sonuç · ${fmtNum(ytDiffState.curveCount)} eğri`;
   const statsEl = document.getElementById("yt-diff-stats");
   if (statsEl) statsEl.innerHTML = `
     <div class="kpi"><div class="kpi-label">Eşleşen Short</div><div class="kpi-value">${fmtNum(allRows.length)}</div></div>
@@ -2064,7 +2073,7 @@ function updateYtDiff() {
 
 function renderYtDiffRow(row) {
   const s = row.short;
-  const spanLabel = ytDiffState.dateFrom && ytDiffState.dateTo ? fmtDate(ytDiffState.dateFrom) : `${ytDiffState.days}g`;
+  const metricLbl = YT_SORT_LABELS[ytDiffState.metric] || "İzlenme";
   return `
     <button class="diff-row" onclick="openShort('${esc(s.id)}')">
       ${s.thumbnail ? `<img class="diff-thumb" src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="diff-thumb"></div>'}
@@ -2073,7 +2082,7 @@ function renderYtDiffRow(row) {
         <div class="post-date">${fmtDate(s.published_at)}</div>
         <div class="post-badges"><span class="badge badge-short">SHORT</span></div>
       </div>
-      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${spanLabel}</span></div>
+      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${metricLbl}</span></div>
       <div class="diff-metric diff-base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
       <div class="diff-metric diff-total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
     </button>`;
@@ -2098,7 +2107,7 @@ function drawYtDiffBarChart(rows) {
     type: "bar",
     data: {
       labels: rows.map((_, i) => `#${i + 1}`),
-      datasets: [{ label: "İzlenme artışı", data: rows.map(row => row.diff), backgroundColor: rows.map((_, i) => DIFF_COLORS[i % DIFF_COLORS.length]), borderRadius: 5 }]
+      datasets: [{ label: `${YT_SORT_LABELS[ytDiffState.metric] || "İzlenme"} artışı`, data: rows.map(row => row.diff), backgroundColor: rows.map((_, i) => DIFF_COLORS[i % DIFF_COLORS.length]), borderRadius: 5 }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -2478,41 +2487,48 @@ function ytShortSortValue(s, key) {
 function setShortsSort(k) { shortsSort = k; shortsPage = 1; renderYtShorts(); }
 function setShortsPage(p) { shortsPage = Math.max(1, p); renderYtShorts(); }
 
-function buildShortViewsHistory(s) {
+function buildShortMetricHistory(s, metric) {
+  metric = metric || "views";
+  const isViews = metric === "views";
+  // hourly snapshot field mapping
+  const snapField = isViews ? "views" : metric;
   const hourly = (s.history || [])
-    .map(x => ({ x: parseDate(x.t), y: Number(x.views) }))
-    .filter(x => Number.isFinite(x.y) && x.y > 0 && !isNaN(x.x.getTime()))
+    .map(x => ({ x: parseDate(x.t), y: Number(x[snapField]) }))
+    .filter(x => Number.isFinite(x.y) && x.y >= 0 && !isNaN(x.x.getTime()))
     .sort((a, b) => a.x - b.x);
   if (hourly.length >= 2) return hourly;
 
-  // Fall back to analytics deltas only when they are reasonably aligned with
-  // the latest visible Shorts count. Otherwise we prefer a sparse but honest
-  // public snapshot history over a misleading reconstructed line.
   const daily = [...(s.daily_history || [])].sort((a, b) => (a.d||"").localeCompare(b.d||""));
-  const latestViews = Number(s.latest && s.latest.views);
-  if (daily.length) {
-    const totalDaily = daily.reduce((sum, d) => sum + (Number(d.engaged_views ?? d.views) || 0), 0);
-    if (Number.isFinite(latestViews) && totalDaily > 0) {
-      const ratio = latestViews / totalDaily;
-      if (ratio < 0.8 || ratio > 1.25) return hourly;
-    }
-    let cumulative = Number.isFinite(latestViews) ? Math.max(0, latestViews - totalDaily) : 0;
-    const points = [];
-    const firstDate = daily[0].d;
-    if (firstDate) points.push({ x: new Date(firstDate + "T00:00:00"), y: cumulative });
-    for (const d of daily) {
-      cumulative += Number(d.engaged_views ?? d.views) || 0;
-      points.push({ x: new Date(d.d + "T23:59:59"), y: cumulative });
-    }
-    const latestAt = parseDate((s.latest && s.latest.fetched_at) || (DATA && DATA.generated_at) || new Date());
-    if (Number.isFinite(latestViews) && !isNaN(latestAt.getTime()) && (!points.length || points[points.length - 1].y !== latestViews)) {
-      points.push({ x: latestAt, y: latestViews });
-    }
-    return points.filter(p => !isNaN(p.x.getTime())).sort((a, b) => a.x - b.x);
+  if (!daily.length) return hourly;
+
+  const dailyVal = isViews
+    ? (d => Number(d.engaged_views ?? d.views) || 0)
+    : (d => Number(d[snapField]) || 0);
+  const latestVal = Number(s.latest && (isViews ? (s.latest.views ?? s.latest.engaged_views) : s.latest[snapField]));
+  const totalDaily = daily.reduce((sum, d) => sum + dailyVal(d), 0);
+
+  // For views only: sanity-check that daily totals roughly match latest count
+  if (isViews && Number.isFinite(latestVal) && totalDaily > 0) {
+    const ratio = latestVal / totalDaily;
+    if (ratio < 0.8 || ratio > 1.25) return hourly;
   }
 
-  return hourly;
+  let cumulative = Number.isFinite(latestVal) ? Math.max(0, latestVal - totalDaily) : 0;
+  const points = [];
+  if (daily[0].d) points.push({ x: new Date(daily[0].d + "T00:00:00"), y: cumulative });
+  for (const d of daily) {
+    cumulative += dailyVal(d);
+    points.push({ x: new Date(d.d + "T23:59:59"), y: cumulative });
+  }
+  const latestAt = parseDate((s.latest && s.latest.fetched_at) || (DATA && DATA.generated_at) || new Date());
+  if (Number.isFinite(latestVal) && !isNaN(latestAt.getTime()) && (!points.length || points[points.length - 1].y !== latestVal)) {
+    points.push({ x: latestAt, y: latestVal });
+  }
+  return points.filter(p => !isNaN(p.x.getTime())).sort((a, b) => a.x - b.x);
 }
+
+// Backward-compat alias (modal history chart still calls this)
+function buildShortViewsHistory(s) { return buildShortMetricHistory(s, "views"); }
 
 function openShort(id) {
   const yt = (DATA && DATA.youtube) || {};
