@@ -566,9 +566,12 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                         "average_view_percentage", "impressions", "impressions_ctr",
                         "subscribers_gained", "subscribers_lost", "fetched_at"]
                 latest = dict(zip(keys, snap))
-                latest["views"] = latest.get("public_views")
-                if latest.get("views") is None:
-                    latest["views"] = latest.get("engaged_views")
+                # Views priority: Data API (engaged_views = statistics.viewCount, exact)
+                # > public scrape (unreliable). After yt_fetcher fix, engaged_views IS
+                # the YouTube UI count.
+                ev = latest.get("engaged_views")
+                pv = latest.get("public_views")
+                latest["views"] = ev if ev is not None else pv
 
             # Saatlik snapshot geçmişi (gün içi takip)
             history_rows = conn.execute("""
@@ -581,7 +584,7 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 ORDER BY id DESC LIMIT 30
             """, (video_id,)).fetchall()
             history = [
-                {"t": h[0], "views": h[2] if h[2] is not None else h[1], "engaged_views": h[1],
+                {"t": h[0], "views": h[1] if h[1] is not None else h[2], "engaged_views": h[1],
                  "public_views": h[2], "likes": h[3], "comments": h[4],
                  "shares": h[5], "estimated_minutes_watched": h[6],
                  "average_view_duration": h[7], "average_view_percentage": h[8],

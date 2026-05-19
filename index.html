@@ -1434,6 +1434,7 @@ function renderDiff() {
             <label>Tarih Aralığı</label>
             <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
               <div class="range-sel" style="margin:0">
+                <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===1?' active':''}" data-days="1" onclick="setDiffPreset(1)">1g</button>
                 <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===3?' active':''}" data-days="3" onclick="setDiffPreset(3)">3g</button>
                 <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===7?' active':''}" data-days="7" onclick="setDiffPreset(7)">7g</button>
                 <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===14?' active':''}" data-days="14" onclick="setDiffPreset(14)">14g</button>
@@ -1822,6 +1823,8 @@ function renderYtSummary() {
     <div class="card">
       <h3>YouTube Özeti</h3>
       <div class="range-sel">
+        <button class="${ytRange===1?'active':''}" onclick="setYtRange(1)">1g</button>
+        <button class="${ytRange===3?'active':''}" onclick="setYtRange(3)">3g</button>
         <button class="${ytRange===7?'active':''}" onclick="setYtRange(7)">7g</button>
         <button class="${ytRange===30?'active':''}" onclick="setYtRange(30)">30g</button>
         <button class="${ytRange===90?'active':''}" onclick="setYtRange(90)">90g</button>
@@ -1932,6 +1935,7 @@ function renderYtDiff() {
           <div class="diff-field" style="grid-column:1/-1">
             <label>Hızlı aralık</label>
             <div class="range-sel" style="margin-bottom:0">
+              <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===1?' active':''}" onclick="setYtDiffPreset(1)">1g</button>
               <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===3?' active':''}" onclick="setYtDiffPreset(3)">3g</button>
               <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===7?' active':''}" onclick="setYtDiffPreset(7)">7g</button>
               <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===14?' active':''}" onclick="setYtDiffPreset(14)">14g</button>
@@ -2152,6 +2156,7 @@ function renderYtHesap() {
     <div class="card">
       <h3>Kanal İstatistikleri</h3>
       <div class="range-sel">
+        <button class="${ytRange===1?'active':''}" onclick="setYtRange(1)">1g</button>
         <button class="${ytRange===7?'active':''}" onclick="setYtRange(7)">7g</button>
         <button class="${ytRange===30?'active':''}" onclick="setYtRange(30)">30g</button>
         <button class="${ytRange===90?'active':''}" onclick="setYtRange(90)">90g</button>

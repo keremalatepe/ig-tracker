@@ -411,18 +411,38 @@ def merge_video_snapshot_metrics(
     analytics: dict | None,
     public_stats: dict | None = None,
 ) -> dict:
-    """Keep analytics totals, but store public Shorts views separately."""
+    """Merge analytics + Data API stats into a single snapshot dict.
+
+    Views priority:
+      1. YouTube Data API statistics.viewCount  ← exact same number shown on YouTube UI,
+         fetched via fetch_video_details(), no reporting delay.
+      2. Analytics API engagedViews             ← has 2-3 day lag, only used as fallback.
+      3. Public page scrape publicViews          ← unreliable, last resort.
+    """
     analytics = dict(analytics or {})
     stats = (video_item or {}).get("statistics", {}) or {}
     public_stats = dict(public_stats or {})
-    analytics["views"] = analytics.get("engagedViews", analytics.get("views"))
+
+    # ── Views: Data API is authoritative ──────────────────────────────────────
+    if stats.get("viewCount") is not None:
+        analytics["views"] = int(stats["viewCount"])   # THIS is what YouTube shows
+    else:
+        # Fallback: analytics total (may lag by 2-3 days)
+        analytics["views"] = analytics.get("engagedViews", analytics.get("views"))
+
+    # Keep scraped value in publicViews for reference / history diff detection
     analytics["publicViews"] = public_stats.get("publicViews")
-    if public_stats.get("publicLikes") is not None:
+
+    # ── Likes: Data API > analytics ───────────────────────────────────────────
+    if stats.get("likeCount") is not None:
+        analytics["likes"] = int(stats["likeCount"])
+    elif public_stats.get("publicLikes") is not None:
         analytics["likes"] = public_stats.get("publicLikes")
-    elif stats.get("likeCount") is not None:
-        analytics["likes"] = stats.get("likeCount")
+
+    # ── Comments: Data API ────────────────────────────────────────────────────
     if stats.get("commentCount") is not None:
-        analytics["comments"] = stats.get("commentCount")
+        analytics["comments"] = int(stats["commentCount"])
+
     return analytics
 
 
