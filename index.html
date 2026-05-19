@@ -412,23 +412,28 @@
   .story-stats { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
   .story-stat { font-size: 10px; color: #555; }
   .story-stat b { color: #1a1a1a; }
+  .analytics-grid { display: grid; gap: 10px; }
+  @media (min-width: 900px) { .analytics-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .compact-card { padding: 10px 12px; margin-bottom: 10px; }
+  .compact-card h3 { margin-bottom: 8px; font-size: 13px; }
   .breakdown-list { display: grid; gap: 10px; }
   .breakdown-row {
-    display: grid; gap: 6px; padding: 10px 12px;
-    border: 1px solid #f0f0f0; border-radius: 10px; background: #fcfcfc;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px;
+    align-items: center; padding: 7px 9px;
+    border: 1px solid #f0f0f0; border-radius: 8px; background: #fcfcfc;
   }
-  .breakdown-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
-  .breakdown-label { font-size: 13px; font-weight: 700; color: #222; min-width: 0; }
-  .breakdown-value { font-size: 12px; color: #666; white-space: nowrap; }
-  .breakdown-share { font-size: 22px; font-weight: 800; line-height: 1; }
+  .breakdown-head { display: contents; }
+  .breakdown-label { font-size: 12px; font-weight: 700; color: #222; min-width: 0; }
+  .breakdown-value { font-size: 11px; color: #666; white-space: nowrap; }
+  .breakdown-share { font-size: 14px; font-weight: 800; line-height: 1; white-space: nowrap; }
   .breakdown-note { font-size: 11px; color: #888; }
   .retention-table { display: grid; gap: 6px; font-size: 12px; }
   .retention-row {
-    display: grid; grid-template-columns: 80px 1fr 110px; gap: 10px;
-    align-items: center; padding: 8px 0; border-bottom: 1px solid #f1f1f1;
+    display: grid; grid-template-columns: 52px 1fr 72px; gap: 8px;
+    align-items: center; padding: 6px 0; border-bottom: 1px solid #f1f1f1;
   }
   .retention-row:last-child { border-bottom: 0; }
-  .retention-row.head { font-size: 11px; font-weight: 800; color: #888; text-transform: uppercase; }
+  .retention-row.head { font-size: 10px; font-weight: 800; color: #888; text-transform: uppercase; }
 
   @media (max-width: 680px) {
     body { overflow-x: hidden; }
@@ -524,8 +529,10 @@
       font-size: 11px;
     }
     .top-update span:last-child { white-space: normal; }
-    .retention-row { grid-template-columns: 56px 1fr 84px; gap: 8px; }
-    .breakdown-share { font-size: 18px; }
+    .analytics-grid { grid-template-columns: 1fr; }
+    .breakdown-row { grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 7px 8px; }
+    .retention-row { grid-template-columns: 48px 1fr 64px; gap: 6px; }
+    .breakdown-share { font-size: 13px; }
   }
 </style>
 </head>
@@ -2304,7 +2311,7 @@ function renderYtBreakdownCard(title, rows, reportKey, color, metricKey = "views
   const total = rows.reduce((sum, row) => sum + (Number(row[metricKey]) || 0), 0);
   const sorted = [...rows].sort((a, b) => (Number(b[metricKey]) || 0) - (Number(a[metricKey]) || 0));
   return `
-    <div class="card">
+    <div class="card compact-card">
       <h3>${esc(title)}</h3>
       <div class="breakdown-list">
         ${sorted.map(row => {
@@ -2339,7 +2346,7 @@ function renderYtRetentionCard(rows) {
     .sort((a, b) => a.x - b.x)
     .slice(0, 12);
   return `
-    <div class="card">
+    <div class="card compact-card">
       <h3>Retention</h3>
       <div class="retention-table">
         <div class="retention-row head"><span>An</span><span>Izleyici Orani</span><span>Goreli Guc</span></div>
@@ -2370,11 +2377,13 @@ function renderYtAnaliz() {
       <h3>YouTube Analiz</h3>
       <div class="list-meta">Aralik: ${rangeLabel} - Shorts odakli kanal raporu</div>
     </div>
-    ${renderYtBreakdownCard("Trafik Kaynaklari", traffic, "traffic_source", "#cc0000")}
-    ${renderYtBreakdownCard("Abone Olan / Olmayan", subscribed, "subscribed_status", "#ef4444")}
-    ${renderYtBreakdownCard("Cihaz Turleri", devices, "device_type", "#f97316")}
-    ${renderYtBreakdownCard("Ulke Dagilimi", countries, "country", "#2563eb")}
-    ${renderYtRetentionCard(retention)}
+    <div class="analytics-grid">
+      ${renderYtBreakdownCard("Trafik Kaynaklari", traffic, "traffic_source", "#cc0000")}
+      ${renderYtBreakdownCard("Abone Olan / Olmayan", subscribed, "subscribed_status", "#ef4444")}
+      ${renderYtBreakdownCard("Cihaz Turleri", devices, "device_type", "#f97316")}
+      ${renderYtBreakdownCard("Ulke Dagilimi", countries, "country", "#2563eb")}
+      ${renderYtRetentionCard(retention)}
+    </div>
     ${Object.keys(reports).length ? "" : '<div class="card"><div class="empty">Henuz ek YouTube analiz verisi yok.</div></div>'}
   `;
 }
