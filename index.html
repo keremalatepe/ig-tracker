@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>Instagram Dashboard</title>
+<title>Social Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
 <style>
@@ -206,6 +206,21 @@
   @media (min-width: 640px) { .shorts-grid { grid-template-columns: repeat(4, 1fr); } }
   .short-card { background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; overflow: hidden; cursor: pointer; }
   .short-card:hover { border-color: #ccc; }
+
+  .platform-tabs {
+    display: flex; gap: 0; background: #fff; border: 1px solid #e5e5e5;
+    border-radius: 12px; padding: 4px; margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .ptab {
+    flex: 1; border: none; border-radius: 9px; padding: 10px 8px;
+    font-size: 13px; font-weight: 700; cursor: pointer; color: #666;
+    background: transparent; transition: all 0.15s; white-space: nowrap; text-align: center;
+  }
+  .ptab:hover { background: #f5f5f5; color: #333; }
+  .ptab-ig.active { background: linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045); color: #fff; }
+  .ptab-yt.active { background: #ff0000; color: #fff; }
+  .ptab-ozet.active { background: #1a1a1a; color: #fff; }
   .short-info { padding: 6px 8px 8px; }
   .short-title { font-size: 12px; color: #222; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
   .short-date { font-size: 10px; color: #888; margin-top: 3px; }
@@ -374,6 +389,8 @@ let storiesPage = 1;
 let shortsPage = 1;
 let shortsSort = "views";
 let selectedShortId = null;
+let activePlatform = "instagram";
+let activeYtTab = "shorts";
 const PAGE_SIZE = 20;
 
 const YT_SORT_LABELS = {
@@ -517,6 +534,26 @@ function rateSortBadge(post) {
 }
 
 function render() {
+  const hasYoutube = !!(DATA && DATA.youtube && DATA.youtube.channel && DATA.youtube.channel.channel_id);
+  const platformTabsHtml = `
+    <div class="platform-tabs">
+      <button class="ptab ptab-ig${activePlatform==='instagram'?' active':''}" onclick="setPlatform('instagram')">📷 Instagram</button>
+      ${hasYoutube ? `<button class="ptab ptab-yt${activePlatform==='youtube'?' active':''}" onclick="setPlatform('youtube')">▶ YouTube</button>` : ""}
+      <button class="ptab ptab-ozet${activePlatform==='ozet'?' active':''}" onclick="setPlatform('ozet')">Özet</button>
+    </div>`;
+  if (activePlatform === "youtube") renderYoutubeView(platformTabsHtml);
+  else if (activePlatform === "ozet") renderOzetView(platformTabsHtml);
+  else renderInstagramView(platformTabsHtml);
+}
+
+function setPlatform(p) {
+  activePlatform = p;
+  Object.values(chartsByTab).forEach(c => { try { c.destroy(); } catch(e){} });
+  chartsByTab = {};
+  render();
+}
+
+function renderInstagramView(platformTabsHtml) {
   const profile = (DATA && DATA.profile) || {};
   const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
   const lastRun = DATA && DATA.recent_runs && DATA.recent_runs[0];
@@ -527,16 +564,14 @@ function render() {
   if (profile.profile_picture_url)
     avatarHtml = `<img src="${profile.profile_picture_url}" alt="" onerror="this.style.display='none'" />`;
 
-  const hasYoutube = !!(DATA && DATA.youtube && DATA.youtube.channel && DATA.youtube.channel.channel_id);
   const tabs = [
     { id: "summary", label: "Özet" }, { id: "posts", label: "İçerikler" },
     { id: "reels", label: "Reels" }, { id: "stories", label: "Stories" },
     ...(showAccountTab ? [{ id: "account", label: "Hesap" }] : []),
     { id: "demo", label: "Demografik" }, { id: "runs", label: "Çalışmalar" },
-    ...(hasYoutube ? [{ id: "youtube", label: "▶ YouTube" }] : []),
   ];
 
-  document.getElementById("root").innerHTML = `
+  document.getElementById("root").innerHTML = platformTabsHtml + `
     <div class="hdr">
       <div class="hdr-avatar">${avatarHtml}</div>
       <div class="hdr-info">
@@ -579,7 +614,6 @@ function renderPane(tab) {
   else if (tab === "account") renderAccount();
   else if (tab === "demo") renderDemo();
   else if (tab === "runs") renderRuns();
-  else if (tab === "youtube") renderYoutube();
 }
 
 function renderSummary() {
@@ -646,7 +680,7 @@ function renderSummary() {
   if (dailyViewsFiltered.length) drawDailyViewsChart(dailyViewsFiltered);
 }
 
-function setFollowerRange(d) { followerRange = d; renderSummary(); }
+function setFollowerRange(d) { followerRange = d; if (activePlatform === "ozet") renderOzet(); else renderSummary(); }
 function setViewsRange(d) { viewsRange = d; renderSummary(); }
 function setViewsSource(source) { viewsSource = source; renderSummary(); }
 
@@ -1170,51 +1204,72 @@ function renderRuns() {
     </div>`;
 }
 
-function ytShortSortValue(s, key) {
-  const l = s.latest || {};
-  if (key === "posted_at") return s.published_at || "";
-  return Number(l[key]) || 0;
-}
+// ─── YouTube ───────────────────────────────────────────────────────────────
 
-function renderYoutube() {
+function renderYoutubeView(platformTabsHtml) {
   const yt = (DATA && DATA.youtube) || {};
   const ch = yt.channel || {};
+  const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
+  const ytTabs = [
+    { id: "shorts", label: "Shorts" },
+    { id: "diff",   label: "Diff" },
+    { id: "hesap",  label: "Hesap" },
+  ];
+  document.getElementById("root").innerHTML = platformTabsHtml + `
+    <div class="hdr yt-hdr">
+      <div class="hdr-avatar" style="background:rgba(255,255,255,0.2);font-size:22px">▶</div>
+      <div class="hdr-info">
+        <p class="hdr-name">${esc(ch.channel_title || "—")}</p>
+        <p class="hdr-user">${ch.channel_id ? ch.channel_id : ""}</p>
+        <div class="hdr-stats">
+          <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
+          <span><b>${fmtNum(ch.video_count)}</b> video</span>
+        </div>
+      </div>
+      <button class="refresh-btn" onclick="load()">↻ Yenile</button>
+    </div>
+    <div class="tabs">
+      ${ytTabs.map(t => `<button class="tab ${activeYtTab===t.id?'active':''}" onclick="setYtTab('${t.id}')">${t.label}</button>`).join("")}
+    </div>
+    <div class="top-update">
+      <span>Son güncelleme: <b>${updated}</b></span>
+    </div>
+    ${ytTabs.map(t => `<div class="pane ${activeYtTab===t.id?'active':''}" id="pane-yt-${t.id}"></div>`).join("")}`;
+  renderYtPane(activeYtTab);
+}
+
+function setYtTab(t) {
+  activeYtTab = t;
+  Object.values(chartsByTab).forEach(c => { try { c.destroy(); } catch(e){} });
+  chartsByTab = {};
+  render();
+}
+
+function renderYtPane(tab) {
+  if (tab === "shorts") renderYtShorts();
+  else if (tab === "diff") renderYtDiff();
+  else if (tab === "hesap") renderYtHesap();
+}
+
+function renderYtShorts() {
+  const yt = (DATA && DATA.youtube) || {};
   const shorts = [...(yt.shorts || [])].sort((a, b) => {
     if (shortsSort === "posted_at") return (b.published_at || "").localeCompare(a.published_at || "");
     return ytShortSortValue(b, shortsSort) - ytShortSortValue(a, shortsSort);
   });
-  const subSeries = yt.subscriber_timeseries || [];
-  const totalViews = shorts.reduce((s, x) => s + (Number((x.latest||{}).views) || 0), 0);
   const page = shortsPage;
   const totalPages = Math.max(1, Math.ceil(shorts.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   if (safePage !== page) { shortsPage = safePage; }
   const pageItems = shorts.slice((safePage-1)*PAGE_SIZE, safePage*PAGE_SIZE);
 
-  document.getElementById("pane-youtube").innerHTML = `
-    <div class="card">
-      <div class="hdr yt-hdr" style="margin-bottom:0;border-radius:10px">
-        <div class="hdr-avatar" style="background:rgba(255,255,255,0.2);font-size:20px">▶</div>
-        <div class="hdr-info">
-          <p class="hdr-name">${esc(ch.channel_title || "—")}</p>
-          <div class="hdr-stats">
-            <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
-            <span><b>${fmtNum(ch.video_count)}</b> video</span>
-            <span><b>${fmtShort(totalViews)}</b> toplam izl.</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    ${subSeries.length ? `
-    <div class="card">
-      <h3>Abone Trendi</h3>
-      <div class="chart-wrap"><canvas id="chart-yt-subs"></canvas></div>
-    </div>` : ""}
+  document.getElementById("pane-yt-shorts").innerHTML = `
     <div class="card">
       <h3>Shorts (${shorts.length})</h3>
       <div class="sort-bar">
         ${Object.entries(YT_SORT_LABELS).map(([k,v]) => `<button class="${shortsSort===k?'active':''}" onclick="setShortsSort('${k}')">${v}</button>`).join("")}
       </div>
+      ${shorts.length === 0 ? '<div class="empty">Henüz Short verisi yok.</div>' : ""}
       <div class="shorts-grid">
         ${pageItems.map(s => {
           const l = s.latest || {};
@@ -1245,10 +1300,78 @@ function renderYoutube() {
           </div>
         </div>` : ""}
     </div>`;
+}
+
+function renderYtDiff() {
+  const yt = (DATA && DATA.youtube) || {};
+  const shorts = yt.shorts || [];
+  const DAYS = 7;
+  const cutoffDate = new Date(Date.now() - DAYS * 86400000);
+  const cutoffStr = cutoffDate.toISOString().split("T")[0];
+
+  const items = shorts.map(s => {
+    const daily = s.daily_history || [];
+    const latest = Number((s.latest||{}).views) || 0;
+    const baselineRow = [...daily].filter(d => d.d <= cutoffStr).pop();
+    const baselineViews = baselineRow ? (Number(baselineRow.views) || 0) : 0;
+    const diff = Math.max(0, latest - baselineViews);
+    return { ...s, _diff: diff, _latest: latest };
+  }).sort((a, b) => b._diff - a._diff);
+
+  document.getElementById("pane-yt-diff").innerHTML = `
+    <div class="card">
+      <h3>Son ${DAYS} Gün İzlenme Artışı</h3>
+      <div class="list-meta">${fmtDate(cutoffStr)} – bugün</div>
+      ${items.length === 0 ? '<div class="empty">Henüz veri yok.</div>' : ""}
+      <div class="post-list">
+        ${items.map(s => `
+          <div class="post-item" onclick="openShort('${esc(s.id)}')">
+            <div style="width:40px;height:72px;border-radius:6px;overflow:hidden;background:#111;flex-shrink:0">
+              ${s.thumbnail
+                ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" />`
+                : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:16px">▶</div>'}
+            </div>
+            <div class="post-meta">
+              <div class="post-caption">${esc(s.title || "")}</div>
+              <div class="post-date">${fmtDate(s.published_at)}</div>
+              <div class="post-badges"><span class="badge badge-short">SHORT</span></div>
+            </div>
+            <div class="post-stats">
+              <div class="post-stat"><b style="color:#16a34a">+${fmtNum(s._diff)}</b><span>son ${DAYS}g</span></div>
+              <div class="post-stat"><b>${fmtNum(s._latest)}</b><span>toplam</span></div>
+            </div>
+          </div>`).join("")}
+      </div>
+    </div>`;
+}
+
+function renderYtHesap() {
+  const yt = (DATA && DATA.youtube) || {};
+  const ch = yt.channel || {};
+  const subSeries = yt.subscriber_timeseries || [];
+  const shorts = yt.shorts || [];
+  const totalViews = shorts.reduce((s, x) => s + (Number((x.latest||{}).views) || 0), 0);
+
+  document.getElementById("pane-yt-hesap").innerHTML = `
+    <div class="card">
+      <h3>Kanal İstatistikleri</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Abone</div><div class="kpi-value">${fmtNum(ch.subscriber_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Toplam Video</div><div class="kpi-value">${fmtNum(ch.video_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Kanal Toplam İzl.</div><div class="kpi-value">${fmtShort(ch.view_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Shorts İzlenme</div><div class="kpi-value">${fmtShort(totalViews)}</div></div>
+      </div>
+    </div>
+    ${subSeries.length ? `
+    <div class="card">
+      <h3>Abone Trendi</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-subs"></canvas></div>
+    </div>` : ""}`;
 
   if (subSeries.length) {
-    const ctx = document.getElementById("chart-yt-subs");
-    if (ctx) {
+    setTimeout(() => {
+      const ctx = document.getElementById("chart-yt-subs");
+      if (!ctx) return;
       chartsByTab.ytSubs = new Chart(ctx, {
         type: "line",
         data: { datasets: [{ label: "Abone", data: subSeries.map(p => ({ x: new Date(p.t), y: p.v })),
@@ -1264,12 +1387,157 @@ function renderYoutube() {
           }
         }
       });
-    }
+    }, 50);
   }
 }
 
-function setShortsSort(k) { shortsSort = k; shortsPage = 1; renderYoutube(); }
-function setShortsPage(p) { shortsPage = Math.max(1, p); renderYoutube(); }
+// ─── Özet (combined) ───────────────────────────────────────────────────────
+
+function renderOzetView(platformTabsHtml) {
+  const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
+  document.getElementById("root").innerHTML = platformTabsHtml + `
+    <div class="top-update">
+      <span>Son güncelleme: <b>${updated}</b></span>
+    </div>
+    <div id="pane-ozet"></div>`;
+  renderOzet();
+}
+
+function renderOzet() {
+  const p = DATA.profile || {};
+  const yt = (DATA && DATA.youtube) || {};
+  const ch = yt.channel || {};
+  const shorts = yt.shorts || [];
+  const totalYtViews = shorts.reduce((s, x) => s + (Number((x.latest||{}).views) || 0), 0);
+  const subSeries = yt.subscriber_timeseries || [];
+
+  const dailyViewsBySource = DATA.daily_views_timeseries || {};
+  const dailyViews = [...(dailyViewsBySource["posts"] || [])].sort((a, b) => (a.d||"").localeCompare(b.d||""));
+  const last30Views = dailyViews.slice(-30);
+  const totalViewsLast30 = last30Views.reduce((sum, row) => sum + (row.v || 0), 0);
+
+  document.getElementById("pane-ozet").innerHTML = `
+    <div class="card" style="border-left:4px solid #833ab4">
+      <h3>📷 Instagram</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Takipçi</div><div class="kpi-value">${fmtNum(p.followers_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Son 7 gün</div><div class="kpi-value">${fmtNum(p.follower_change_7d)}</div>${deltaHtml(p.follower_change_7d)}</div>
+        <div class="kpi"><div class="kpi-label">Son 30 gün</div><div class="kpi-value">${fmtNum(p.follower_change_30d)}</div>${deltaHtml(p.follower_change_30d)}</div>
+        <div class="kpi"><div class="kpi-label">İçerik Sayısı</div><div class="kpi-value">${fmtNum(p.media_count)}</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Takipçi Trendi</h3>
+      <div class="range-sel">
+        <button class="${followerRange===7?'active':''}" onclick="setFollowerRange(7)">7g</button>
+        <button class="${followerRange===30?'active':''}" onclick="setFollowerRange(30)">30g</button>
+        <button class="${followerRange===90?'active':''}" onclick="setFollowerRange(90)">90g</button>
+        <button class="${followerRange===365?'active':''}" onclick="setFollowerRange(365)">1y</button>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-ozet-follower"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Günlük İzlenme (Post + Reels, son 30 gün)</h3>
+      <div class="kpi-grid" style="margin-bottom:10px">
+        <div class="kpi"><div class="kpi-label">Toplam</div><div class="kpi-value">${fmtNum(totalViewsLast30)}</div></div>
+      </div>
+      ${last30Views.length ? '<div class="chart-wrap"><canvas id="chart-ozet-igviews"></canvas></div>' : '<div class="empty">Henüz veri yok.</div>'}
+    </div>
+    ${ch.channel_id ? `
+    <div class="card" style="border-left:4px solid #ff0000;margin-top:8px">
+      <h3>▶ YouTube</h3>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Abone</div><div class="kpi-value">${fmtNum(ch.subscriber_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Shorts İzlenme</div><div class="kpi-value">${fmtShort(totalYtViews)}</div></div>
+        <div class="kpi"><div class="kpi-label">Shorts Sayısı</div><div class="kpi-value">${fmtNum(shorts.length)}</div></div>
+        <div class="kpi"><div class="kpi-label">Kanal Toplam İzl.</div><div class="kpi-value">${fmtShort(ch.view_count)}</div></div>
+      </div>
+    </div>
+    ${subSeries.length ? `
+    <div class="card">
+      <h3>Abone Trendi (YouTube)</h3>
+      <div class="chart-wrap"><canvas id="chart-ozet-ytsubs"></canvas></div>
+    </div>` : ""}` : ""}`;
+
+  // Charts
+  setTimeout(() => {
+    drawOzetFollowerChart();
+    if (last30Views.length) drawOzetIgViewsChart(last30Views);
+    if (ch.channel_id && subSeries.length) drawOzetYtSubsChart(subSeries);
+  }, 50);
+}
+
+function drawOzetFollowerChart() {
+  const series = DATA.follower_timeseries || [];
+  const cutoffMs = Date.now() - followerRange * 86400000;
+  const filtered = series.map(p => ({ x: new Date(p.t), y: p.v })).filter(p => p.x.getTime() >= cutoffMs).sort((a,b) => a.x - b.x);
+  const ctx = document.getElementById("chart-ozet-follower");
+  if (!ctx) return;
+  const tickUnit = followerRange <= 7 ? "day" : followerRange <= 30 ? "week" : "month";
+  chartsByTab.ozetFollower = new Chart(ctx, {
+    type: "line",
+    data: { datasets: [{ label: "Takipçi", data: filtered, borderColor: "#833ab4", backgroundColor: "rgba(131,58,180,0.1)", fill: true, tension: 0.25, pointRadius: 0, pointHitRadius: 18, borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: "time", time: { unit: tickUnit, displayFormats: { day: "d MMM", week: "d MMM", month: "MMM yy" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function drawOzetIgViewsChart(series) {
+  const ctx = document.getElementById("chart-ozet-igviews");
+  if (!ctx) return;
+  chartsByTab.ozetIgViews = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: series.map(x => x.d),
+      datasets: [{ label: "Günlük İzlenme", data: series.map(x => x.v || 0), backgroundColor: "#f97316", borderRadius: 4, maxBarThickness: 28 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => fmtDate(items[0].label),
+        label: item => `İzlenme: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { ticks: { maxRotation: 0, maxTicksLimit: 8, font: { size: 10 }, callback: (_, i) => { const d = new Date(`${series[i].d}T00:00:00`); return d.toLocaleDateString("tr-TR",{day:"2-digit",month:"short"}); } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
+}
+
+function drawOzetYtSubsChart(subSeries) {
+  const ctx = document.getElementById("chart-ozet-ytsubs");
+  if (!ctx) return;
+  chartsByTab.ozetYtSubs = new Chart(ctx, {
+    type: "line",
+    data: { datasets: [{ label: "Abone", data: subSeries.map(p => ({ x: new Date(p.t), y: p.v })), borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.1)", fill: true, tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { type: "time", time: { unit: "day", displayFormats: { day: "d MMM" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function ytShortSortValue(s, key) {
+  const l = s.latest || {};
+  if (key === "posted_at") return s.published_at || "";
+  return Number(l[key]) || 0;
+}
+
+function setShortsSort(k) { shortsSort = k; shortsPage = 1; renderYtShorts(); }
+function setShortsPage(p) { shortsPage = Math.max(1, p); renderYtShorts(); }
 
 function openShort(id) {
   const yt = (DATA && DATA.youtube) || {};
