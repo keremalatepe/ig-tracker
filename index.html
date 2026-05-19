@@ -1098,11 +1098,12 @@ function computePostDiff(p, days = 7) {
   return { days, cutoff, baseline, baselineAt, latestValue, diff: Math.max(0, latestValue - baseline), partial };
 }
 
-function buildPostDiffPoints(p, diff) {
+function buildPostDiffPoints(p, diff, metric) {
   if (!diff) return [];
+  const metricKey = metric || "views";
   const startAt = diff.baselineAt && diff.baselineAt > diff.cutoff ? diff.baselineAt : diff.cutoff;
   const points = [{ x: startAt, y: 0 }];
-  for (const item of getPostMetricHistory(p, diffState.metric)) {
+  for (const item of getPostMetricHistory(p, metricKey)) {
     if (item.t < startAt) continue;
     points.push({ x: item.t, y: Math.max(0, item.v - diff.baseline) });
   }
@@ -1183,7 +1184,7 @@ function openPost(id) {
   document.getElementById("modal-bg").classList.add("open");
   document.body.style.overflow = "hidden";
   const views = getPostViewHistory(p).map(x => ({ x: x.t, y: x.v }));
-  const diffPoints = buildPostDiffPoints(p, diff);
+  const diffPoints = buildPostDiffPoints(p, diff, "views");
   setTimeout(() => {
     const ctx = document.getElementById("chart-post-history");
     if (!ctx || !views.length) return;
@@ -1663,7 +1664,7 @@ function drawDiffLineChart(rows) {
     type: "line",
     data: { datasets: rows.map((row, i) => ({
       label: `#${i+1} ${row.post.caption_short || "İçerik"}`,
-      data: buildPostDiffPoints(row.post, row),
+      data: buildPostDiffPoints(row.post, row, diffState.metric),
       borderColor: DIFF_COLORS[i % DIFF_COLORS.length],
       backgroundColor: "transparent",
       tension: 0.2, pointRadius: 0, borderWidth: 2
