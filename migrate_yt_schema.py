@@ -86,6 +86,30 @@ def migrate(conn: sqlite3.Connection):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_snap_video ON yt_video_snapshots(video_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_snap_fetched ON yt_video_snapshots(fetched_at)")
 
+    log.info("yt_video_daily tablosu...")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS yt_video_daily (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        video_id TEXT NOT NULL,
+        date TEXT NOT NULL,
+        views INTEGER,
+        likes INTEGER,
+        comments INTEGER,
+        shares INTEGER,
+        estimated_minutes_watched INTEGER,
+        average_view_duration INTEGER,
+        average_view_percentage REAL,
+        impressions INTEGER,
+        impressions_ctr REAL,
+        subscribers_gained INTEGER,
+        subscribers_lost INTEGER,
+        UNIQUE(video_id, date),
+        FOREIGN KEY(video_id) REFERENCES yt_videos(video_id)
+    )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_daily_video ON yt_video_daily(video_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_yt_daily_date ON yt_video_daily(date)")
+
     log.info("yt_fetch_runs tablosu...")
     cur.execute("""
     CREATE TABLE IF NOT EXISTS yt_fetch_runs (

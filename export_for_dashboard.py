@@ -558,6 +558,7 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                         "subscribers_gained", "subscribers_lost", "fetched_at"]
                 latest = dict(zip(keys, snap))
 
+            # Saatlik snapshot geçmişi (gün içi takip)
             history_rows = conn.execute("""
                 SELECT fetched_at, views, likes, average_view_percentage,
                        impressions, impressions_ctr
@@ -571,6 +572,26 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 for h in reversed(history_rows)
             ]
 
+            # Günlük tarihsel veri (full mode ile çekilmiş)
+            daily_history = []
+            if _yt_safe(conn, "yt_video_daily"):
+                daily_rows = conn.execute("""
+                    SELECT date, views, likes, comments, shares,
+                           estimated_minutes_watched, average_view_duration,
+                           average_view_percentage, impressions, impressions_ctr,
+                           subscribers_gained
+                    FROM yt_video_daily
+                    WHERE video_id = ?
+                    ORDER BY date
+                """, (video_id,)).fetchall()
+                daily_history = [
+                    {"d": r[0], "views": r[1], "likes": r[2], "comments": r[3],
+                     "shares": r[4], "watch_minutes": r[5], "avg_view_dur": r[6],
+                     "avg_view_pct": r[7], "impressions": r[8], "ctr": r[9],
+                     "subs_gained": r[10]}
+                    for r in daily_rows
+                ]
+
             shorts.append({
                 "id": video_id,
                 "title": title,
@@ -579,6 +600,7 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
                 "duration_seconds": duration,
                 "latest": latest,
                 "history": history,
+                "daily_history": daily_history,
             })
 
     return {

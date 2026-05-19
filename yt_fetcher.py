@@ -241,7 +241,33 @@ class YouTubeFetcher:
             results.extend(data.get("items", []))
         return results
 
-    # ── Analytics: tek video ──
+    # ── Analytics: tek video, günlük breakdown ──
+    def fetch_video_analytics_daily(self, video_id: str, channel_id: str,
+                                     start_date: str, end_date: str) -> list:
+        """dimensions=day ile günlük satırlar döndürür. full mode / geçmiş için."""
+        metrics = ",".join([
+            "views", "likes", "dislikes", "comments", "shares",
+            "estimatedMinutesWatched", "averageViewDuration", "averageViewPercentage",
+            "impressions", "impressionsClickThroughRate",
+            "subscribersGained", "subscribersLost",
+        ])
+        data = self._get(f"{ANALYTICS_API_BASE}/reports", {
+            "ids": f"channel=={channel_id}",
+            "startDate": start_date,
+            "endDate": end_date,
+            "metrics": metrics,
+            "dimensions": "day",
+            "filters": f"video=={video_id}",
+            "sort": "day",
+        })
+        if "error" in data:
+            log.debug(f"  Daily analytics alınamadı ({video_id}): {data['error']}")
+            return []
+
+        col_names = [h["name"] for h in data.get("columnHeaders", [])]
+        return [dict(zip(col_names, row)) for row in data.get("rows", [])]
+
+    # ── Analytics: tek video, toplam ──
     def fetch_video_analytics(self, video_id: str, channel_id: str,
                                start_date: str, end_date: str) -> dict:
         metrics = ",".join([
@@ -345,6 +371,38 @@ def insert_video_snapshot(conn: sqlite3.Connection, fetched_at: str,
     ))
 
 
+def insert_video_daily(conn: sqlite3.Connection, video_id: str, row: dict):
+    """Günlük tarihsel veriyi upsert eder. UNIQUE(video_id, date) çakışırsa günceller."""
+    def _int(k): return int(row[k]) if row.get(k) is not None else None
+    def _float(k): return float(row[k]) if row.get(k) is not None else None
+
+    conn.execute("""
+    INSERT INTO yt_video_daily (
+        video_id, date,
+        views, likes, comments, shares,
+        estimated_minutes_watched, average_view_duration, average_view_percentage,
+        impressions, impressions_ctr,
+        subscribers_gained, subscribers_lost
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(video_id, date) DO UPDATE SET
+        views=excluded.views, likes=excluded.likes,
+        comments=excluded.comments, shares=excluded.shares,
+        estimated_minutes_watched=excluded.estimated_minutes_watched,
+        average_view_duration=excluded.average_view_duration,
+        average_view_percentage=excluded.average_view_percentage,
+        impressions=excluded.impressions, impressions_ctr=excluded.impressions_ctr,
+        subscribers_gained=excluded.subscribers_gained,
+        subscribers_lost=excluded.subscribers_lost
+    """, (
+        video_id, row.get("day"),
+        _int("views"), _int("likes"), _int("comments"), _int("shares"),
+        _int("estimatedMinutesWatched"), _int("averageViewDuration"),
+        _float("averageViewPercentage"),
+        _int("impressions"), _float("impressionsClickThroughRate"),
+        _int("subscribersGained"), _int("subscribersLost"),
+    ))
+
+
 def get_cursor(conn: sqlite3.Connection, key: str) -> str | None:
     row = conn.execute("SELECT value FROM yt_fetch_cursors WHERE key = ?", (key,)).fetchone()
     return row[0] if row else None
@@ -421,8 +479,22 @@ def run_fetch(fetcher: YouTubeFetcher, conn: sqlite3.Connection,
     for i, item in enumerate(shorts_items, 1):
         video_id = item["id"]
         try:
-            analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
-            insert_video_snapshot(conn, fetched_at, video_id, analytics)
+            if mode == "full":
+                # Tüm geçmişi günlük granülasyonda çek
+                published = item.get("snippet", {}).get("publishedAt", "2020-01-01")[:10]
+                daily_rows = fetcher.fetch_video_analytics_daily(
+                    video_id, channel_id, published, end_date
+                )
+                for row in daily_rows:
+                    insert_video_daily(conn, video_id, row)
+                # Ayrıca anlık snapshot da al
+                analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
+                insert_video_snapshot(conn, fetched_at, video_id, analytics)
+                log.debug(f"  {video_id}: {len(daily_rows)} günlük kayıt")
+            else:
+                # hourly: sadece anlık snapshot
+                analytics = fetcher.fetch_video_analytics(video_id, channel_id, start_date, end_date)
+                insert_video_snapshot(conn, fetched_at, video_id, analytics)
             count += 1
         except Exception as e:
             log.warning(f"  Video atlandı ({video_id}): {e}")
