@@ -445,16 +445,19 @@ let shortsPage = 1;
 let shortsSort = "views";
 let selectedShortId = null;
 let activePlatform = "instagram";
-let activeYtTab = "shorts";
-let diffState = { days: 3, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video" };
+let activeYtTab = "summary";
+let diffState = { days: 7, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video" };
+let ozetRange = 30;
+let ytRange = 30;
+let ytDiffState = { days: 3, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null };
 const PAGE_SIZE = 20;
 
 const YT_SORT_LABELS = {
   views: "İzlenme", likes: "Beğeni", comments: "Yorum", shares: "Paylaşım",
   average_view_percentage: "İzl. %", estimated_minutes_watched: "İzl. Süresi",
-  subscribers_gained: "Abone Kazanım", impressions: "Gösterim",
-  impressions_ctr: "CTR", posted_at: "Tarih",
+  subscribers_gained: "Abone Kazanım", subscribers_lost: "Abone Kayıp", posted_at: "Tarih",
 };
+const YT_SHORT_SORT_KEYS = ["views", "likes", "average_view_percentage", "comments", "shares", "subscribers_gained", "estimated_minutes_watched", "posted_at"];
 
 const ACCOUNT_METRIC_LABELS = {
   reach: "Erişim", profile_views: "Profil Z.", total_interactions: "Etkileşim",
@@ -736,7 +739,23 @@ function renderSummary() {
   if (dailyViewsFiltered.length) drawDailyViewsChart(dailyViewsFiltered);
 }
 
-function setFollowerRange(d) { followerRange = d; if (activePlatform === "ozet") renderOzet(); else renderSummary(); }
+function setFollowerRange(d) { followerRange = d; renderSummary(); }
+function setOzetRange(d) { ozetRange = d; renderOzet(); }
+
+function computeYtDailyViews(shorts, rangeDays) {
+  const byDate = {};
+  for (const s of shorts) {
+    for (const d of (s.daily_history || [])) {
+      if (!d.d) continue;
+      byDate[d.d] = (byDate[d.d] || 0) + (Number(d.views) || 0);
+    }
+  }
+  const cutoff = new Date(Date.now() - rangeDays * 86400000).toISOString().split("T")[0];
+  return Object.entries(byDate)
+    .filter(([d]) => d >= cutoff)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([d, v]) => ({ d, v }));
+}
 function setViewsRange(d) { viewsRange = d; renderSummary(); }
 function setViewsSource(source) { viewsSource = source; renderSummary(); }
 
@@ -1072,6 +1091,8 @@ function closeModal() {
   document.getElementById("modal-bg").classList.remove("open");
   document.body.style.overflow = "";
   if (chartsByTab.postHistory) { try { chartsByTab.postHistory.destroy(); } catch(e){} delete chartsByTab.postHistory; }
+  if (chartsByTab.shortHistory) { try { chartsByTab.shortHistory.destroy(); } catch(e){} delete chartsByTab.shortHistory; }
+  if (chartsByTab.ytDaily) { try { chartsByTab.ytDaily.destroy(); } catch(e){} delete chartsByTab.ytDaily; }
 }
 
 function renderStories() {
@@ -1266,6 +1287,7 @@ const DIFF_COLORS = ["#168a5b","#2563eb","#b45309","#dc2626","#7c3aed","#0891b2"
 
 function renderDiff() {
   const isMobile = window.innerWidth < 640;
+  const today = new Date().toISOString().split("T")[0];
   document.getElementById("pane-diff").innerHTML = `
     <details class="diff-filter" id="diff-filter-panel" ${!isMobile ? "open" : ""}>
       <summary>
@@ -1274,7 +1296,23 @@ function renderDiff() {
       </summary>
       <div class="diff-filter-body">
         <div class="diff-fields">
-          <div class="diff-field"><label>Gün sayısı</label><input id="df-days" type="number" min="1" max="90" value="${diffState.days}" /></div>
+          <div class="diff-field" style="grid-column:1/-1">
+            <label>Tarih Aralığı</label>
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px">
+              <div class="range-sel" style="margin:0">
+                <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===3?' active':''}" data-days="3" onclick="setDiffPreset(3)">3g</button>
+                <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===7?' active':''}" data-days="7" onclick="setDiffPreset(7)">7g</button>
+                <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===14?' active':''}" data-days="14" onclick="setDiffPreset(14)">14g</button>
+                <button class="diff-preset-btn${!diffState.dateFrom && diffState.days===30?' active':''}" data-days="30" onclick="setDiffPreset(30)">30g</button>
+              </div>
+              <span style="font-size:11px;color:#aaa">ya da özel:</span>
+              <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap">
+                <input id="df-date-from" type="date" style="border:1px solid #e5e5e5;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px;min-height:34px" value="${diffState.dateFrom||''}" max="${today}" />
+                <span style="font-size:11px;color:#aaa">–</span>
+                <input id="df-date-to" type="date" style="border:1px solid #e5e5e5;border-radius:8px;padding:5px 8px;font:inherit;font-size:12px;min-height:34px" value="${diffState.dateTo||today}" max="${today}" />
+              </div>
+            </div>
+          </div>
           <div class="diff-field"><label>Liste limiti</label><input id="df-limit" type="number" min="1" max="500" value="${diffState.limit}" /></div>
           <div class="diff-field"><label>Grafik eğrisi</label><input id="df-curves" type="number" min="1" max="30" value="${diffState.curveCount}" /></div>
           <div class="diff-field"><label>Min. artış</label><input id="df-min" type="text" inputmode="numeric" placeholder="0" value="${diffState.minDiff ?? ""}" /></div>
@@ -1303,9 +1341,23 @@ function renderDiff() {
       <div id="diff-results" class="loading">Hesaplanıyor…</div>
     </div>`;
 
-  ["df-days","df-limit","df-curves","df-min","df-max","df-type"].forEach(id => {
+  ["df-date-from","df-date-to","df-limit","df-curves","df-min","df-max","df-type"].forEach(id => {
     const el = document.getElementById(id);
     if (el) { el.addEventListener("change", updateDiff); el.addEventListener("input", updateDiff); }
+  });
+  updateDiff();
+}
+
+function setDiffPreset(d) {
+  diffState.days = d;
+  diffState.dateFrom = null;
+  diffState.dateTo = null;
+  const from = document.getElementById("df-date-from");
+  const to = document.getElementById("df-date-to");
+  if (from) from.value = "";
+  if (to) to.value = new Date().toISOString().split("T")[0];
+  document.querySelectorAll(".diff-preset-btn").forEach(b => {
+    b.classList.toggle("active", parseInt(b.dataset.days) === d);
   });
   updateDiff();
 }
@@ -1320,7 +1372,18 @@ function parseDiffAmount(val) {
 
 function readDiffControls() {
   const g = id => document.getElementById(id);
-  diffState.days = Math.max(1, Math.min(90, parseInt(g("df-days").value, 10) || 3));
+  const fromEl = g("df-date-from"), toEl = g("df-date-to");
+  const fromVal = fromEl && fromEl.value;
+  const toVal = toEl && toEl.value;
+  if (fromVal && toVal && fromVal < toVal) {
+    diffState.dateFrom = fromVal;
+    diffState.dateTo = toVal;
+    // deactivate preset buttons
+    document.querySelectorAll(".diff-preset-btn").forEach(b => b.classList.remove("active"));
+  } else {
+    diffState.dateFrom = null;
+    diffState.dateTo = null;
+  }
   diffState.limit = Math.max(1, Math.min(500, parseInt(g("df-limit").value, 10) || 25));
   diffState.curveCount = Math.max(1, Math.min(30, parseInt(g("df-curves").value, 10) || 5));
   diffState.minDiff = parseDiffAmount(g("df-min").value);
@@ -1330,16 +1393,29 @@ function readDiffControls() {
 
 function computeDiffRows() {
   if (!DATA) return [];
-  const generated = DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
-  const cutoff = new Date(generated.getTime() - diffState.days * 86400000);
+  let cutoff, latestCutoff;
+  if (diffState.dateFrom && diffState.dateTo) {
+    cutoff = new Date(diffState.dateFrom + "T00:00:00");
+    latestCutoff = new Date(diffState.dateTo + "T23:59:59");
+  } else {
+    const generated = DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
+    cutoff = new Date(generated.getTime() - diffState.days * 86400000);
+    latestCutoff = null;
+  }
   const rows = [];
   for (const post of DATA.posts || []) {
     if (diffState.type === "reels" && post.product_type !== "REELS") continue;
     if (diffState.type === "video" && post.type !== "VIDEO" && post.product_type !== "REELS") continue;
     const history = getPostViewHistory(post);
-    const latestValue = Number.isFinite(Number(post.latest && post.latest.views))
-      ? Number(post.latest.views)
-      : (history[history.length - 1] && history[history.length - 1].v);
+    let latestValue;
+    if (latestCutoff) {
+      const atEnd = history.filter(x => x.t <= latestCutoff).pop();
+      latestValue = atEnd ? atEnd.v : (Number.isFinite(Number(post.latest && post.latest.views)) ? Number(post.latest.views) : null);
+    } else {
+      latestValue = Number.isFinite(Number(post.latest && post.latest.views))
+        ? Number(post.latest.views)
+        : (history[history.length - 1] && history[history.length - 1].v);
+    }
     if (!Number.isFinite(latestValue)) continue;
     const postedAt = post.posted_at ? parseDate(post.posted_at) : null;
     let baseline = null, baselineAt = null, partial = false;
@@ -1376,8 +1452,11 @@ function updateDiff() {
     <div class="kpi"><div class="kpi-label">En yüksek</div><div class="kpi-value">${fmtShort(allRows[0] && allRows[0].diff)}</div></div>
     <div class="kpi"><div class="kpi-label">Kapsam</div><div class="kpi-value" style="font-size:14px">${partials ? `${allRows.length-partials}/${allRows.length}` : "Tam"}</div></div>`;
 
+  const rangeLabel = diffState.dateFrom && diffState.dateTo
+    ? `${fmtDate(diffState.dateFrom)} – ${fmtDate(diffState.dateTo)}`
+    : `Son ${diffState.days}g`;
   const metaEl = document.getElementById("diff-filter-meta");
-  if (metaEl) metaEl.textContent = `${diffState.days}g · ${allRows.length} sonuç · ${typeLabel}`;
+  if (metaEl) metaEl.textContent = `${rangeLabel} · ${allRows.length} sonuç · ${typeLabel}`;
 
   if (chartsByTab.diffBar) { try { chartsByTab.diffBar.destroy(); } catch(e){} delete chartsByTab.diffBar; }
   if (chartsByTab.diffLine) { try { chartsByTab.diffLine.destroy(); } catch(e){} delete chartsByTab.diffLine; }
@@ -1403,7 +1482,7 @@ function renderDiffRow(row) {
         <div class="post-date">${esc(p.product_type || p.type || "")} · ${fmtDate(p.posted_at)}</div>
         ${row.partial ? '<span class="diff-flag">eksik başlangıç</span>' : ""}
       </div>
-      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${diffState.days}g</span></div>
+      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${diffState.dateFrom && diffState.dateTo ? fmtDate(diffState.dateFrom) : diffState.days+"g"}</span></div>
       <div class="diff-metric diff-base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
       <div class="diff-metric diff-total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
     </button>`;
@@ -1480,18 +1559,22 @@ function renderYoutubeView(platformTabsHtml) {
   const ch = yt.channel || {};
   const updated = DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—";
   const ytTabs = [
+    { id: "summary", label: "Özet" },
     { id: "shorts", label: "Shorts" },
     { id: "diff",   label: "Diff" },
     { id: "hesap",  label: "Hesap" },
   ];
+  if (!ytTabs.some(t => t.id === activeYtTab)) activeYtTab = "summary";
   const chAvatarHtml = ch.thumbnail_url
     ? `<img src="${esc(ch.thumbnail_url)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%" onerror="this.style.display='none'" />`
     : `<span style="font-size:22px">▶</span>`;
+  const ytHandle = ch.handle || ch.custom_url || "@aybiksbites";
   document.getElementById("root").innerHTML = platformTabsHtml + `
     <div class="hdr yt-hdr">
       <div class="hdr-avatar" style="background:rgba(255,255,255,0.2)">${chAvatarHtml}</div>
       <div class="hdr-info">
         <p class="hdr-name">${esc(ch.channel_title || "—")}</p>
+        <p class="hdr-user">${esc(String(ytHandle).startsWith("@") ? ytHandle : "@" + ytHandle)}</p>
         <div class="hdr-stats">
           <span><b>${fmtNum(ch.subscriber_count)}</b> abone</span>
           <span><b>${fmtNum(ch.video_count)}</b> video</span>
@@ -1517,14 +1600,147 @@ function setYtTab(t) {
 }
 
 function renderYtPane(tab) {
-  if (tab === "shorts") renderYtShorts();
+  if (tab === "summary") renderYtSummary();
+  else if (tab === "shorts") renderYtShorts();
   else if (tab === "diff") renderYtDiff();
   else if (tab === "hesap") renderYtHesap();
 }
 
+function ytLatestNumber(short, key) {
+  const value = short && short.latest ? Number(short.latest[key]) : NaN;
+  return Number.isFinite(value) ? value : 0;
+}
+
+function ytMetricAvailable(shorts, key) {
+  if (key === "posted_at") return true;
+  return (shorts || []).some(short => {
+    const value = short && short.latest ? short.latest[key] : null;
+    return value != null && Number.isFinite(Number(value));
+  });
+}
+
+function ytShortSortOptions(shorts) {
+  return YT_SHORT_SORT_KEYS.filter(key => ytMetricAvailable(shorts, key));
+}
+
+function ytDailyMetricOptions(daily) {
+  return ["views", "likes", "comments", "shares", "average_view_percentage", "subscribers_gained"]
+    .filter(key => (daily || []).some(row => row[key] != null && Number.isFinite(Number(row[key]))));
+}
+
+function metricValueAt(points, target) {
+  let value = 0;
+  let at = target;
+  for (const point of points || []) {
+    if (point.x <= target) {
+      value = point.y;
+      at = point.x;
+    } else {
+      break;
+    }
+  }
+  return { value, at };
+}
+
+function subscriberDelta(series, rangeDays) {
+  const cutoffMs = Date.now() - rangeDays * 86400000;
+  const filtered = (series || [])
+    .map(p => ({ x: new Date(p.t), y: Number(p.v) }))
+    .filter(p => Number.isFinite(p.y) && !isNaN(p.x.getTime()) && p.x.getTime() >= cutoffMs)
+    .sort((a, b) => a.x - b.x);
+  if (filtered.length < 2) return null;
+  return filtered[filtered.length - 1].y - filtered[0].y;
+}
+
+function setYtRange(days) {
+  ytRange = days;
+  Object.values(chartsByTab).forEach(c => { try { c.destroy(); } catch(e){} });
+  chartsByTab = {};
+  renderYtPane(activeYtTab);
+}
+
+function renderYtSummary() {
+  const yt = (DATA && DATA.youtube) || {};
+  const ch = yt.channel || {};
+  const shorts = yt.shorts || [];
+  const subSeries = yt.subscriber_timeseries || [];
+  const dailyViews = computeYtDailyViews(shorts, ytRange);
+  const totalViewsInRange = dailyViews.reduce((sum, row) => sum + (row.v || 0), 0);
+  const totalShortViews = shorts.reduce((sum, s) => sum + ytLatestNumber(s, "views"), 0);
+  const subChange = subscriberDelta(subSeries, ytRange);
+  const topShorts = [...shorts]
+    .filter(s => s.latest && s.latest.views != null)
+    .sort((a, b) => ytLatestNumber(b, "views") - ytLatestNumber(a, "views"))
+    .slice(0, 5);
+
+  document.getElementById("pane-yt-summary").innerHTML = `
+    <div class="card">
+      <h3>YouTube Özeti</h3>
+      <div class="range-sel">
+        <button class="${ytRange===7?'active':''}" onclick="setYtRange(7)">7g</button>
+        <button class="${ytRange===30?'active':''}" onclick="setYtRange(30)">30g</button>
+        <button class="${ytRange===90?'active':''}" onclick="setYtRange(90)">90g</button>
+        <button class="${ytRange===365?'active':''}" onclick="setYtRange(365)">1y</button>
+      </div>
+      <div class="kpi-grid">
+        <div class="kpi"><div class="kpi-label">Abone</div><div class="kpi-value">${fmtNum(ch.subscriber_count)}</div></div>
+        <div class="kpi"><div class="kpi-label">Son ${ytRange}g Abone</div><div class="kpi-value">${fmtNum(subChange)}</div>${deltaHtml(subChange)}</div>
+        <div class="kpi"><div class="kpi-label">Son ${ytRange}g İzlenme</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div></div>
+        <div class="kpi"><div class="kpi-label">Shorts Toplam</div><div class="kpi-value">${fmtShort(totalShortViews)}</div></div>
+      </div>
+    </div>
+    ${subSeries.length ? `
+    <div class="card">
+      <h3>Abone Trendi</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-summary-subs"></canvas></div>
+    </div>` : ""}
+    ${dailyViews.length ? `
+    <div class="card">
+      <h3>Günlük İzlenme</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-summary-views"></canvas></div>
+    </div>` : '<div class="card"><div class="empty">Henüz günlük izlenme verisi yok.</div></div>'}
+    <div class="card">
+      <h3>En Çok İzlenen Shorts</h3>
+      <div class="post-list">${topShorts.length ? topShorts.map(renderShortRow).join("") : '<div class="empty">Henüz Short verisi yok.</div>'}</div>
+    </div>`;
+
+  setTimeout(() => {
+    if (subSeries.length) drawYtSubscriberChart("chart-yt-summary-subs", subSeries, ytRange);
+    if (dailyViews.length) drawYtDailyViewsChart("chart-yt-summary-views", dailyViews, "Günlük İzlenme");
+  }, 50);
+}
+
+function renderShortRow(s) {
+  const l = s.latest || {};
+  const hasMetrics = l.views != null || l.likes != null;
+  return `<div class="post-item" onclick="openShort('${esc(s.id)}')">
+    <div style="width:40px;height:72px;border-radius:6px;overflow:hidden;background:#111;flex-shrink:0">
+      ${s.thumbnail
+        ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=0.3" />`
+        : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:16px">▶</div>'}
+    </div>
+    <div class="post-meta">
+      <div class="post-caption">${esc(s.title || "")}</div>
+      <div class="post-date">${fmtDate(s.published_at)} · ${s.duration_seconds}s</div>
+      <div class="post-badges"><span class="badge badge-short">SHORT</span>${!hasMetrics ? '<span class="badge" style="background:#fef9c3;color:#854d0e">Veri yok</span>' : ""}</div>
+    </div>
+    <div class="post-stats">
+      <div class="post-stat"><b>${l.views != null ? fmtShort(l.views) : "—"}</b><span>izl</span></div>
+      <div class="post-stat"><b>${l.likes != null ? fmtShort(l.likes) : "—"}</b><span>beğ</span></div>
+      <div class="post-stat"><b>${l.average_view_percentage != null ? Number(l.average_view_percentage).toFixed(0)+"%" : "—"}</b><span>izl%</span></div>
+      <div class="post-stat"><b>${l.comments != null ? fmtShort(l.comments) : "—"}</b><span>yorum</span></div>
+      <div class="post-stat"><b>${l.shares != null ? fmtShort(l.shares) : "—"}</b><span>payl</span></div>
+      <div class="post-stat"><b>${l.subscribers_gained != null ? fmtShort(l.subscribers_gained) : "—"}</b><span>abone+</span></div>
+    </div>
+  </div>`;
+}
+
 function renderYtShorts() {
   const yt = (DATA && DATA.youtube) || {};
-  const shorts = [...(yt.shorts || [])].sort((a, b) => {
+  const rawShorts = yt.shorts || [];
+  const sortOptions = ytShortSortOptions(rawShorts);
+  if (!sortOptions.includes(shortsSort)) shortsSort = sortOptions.includes("views") ? "views" : (sortOptions[0] || "posted_at");
+  const shorts = [...rawShorts].sort((a, b) => {
     if (shortsSort === "posted_at") return (b.published_at || "").localeCompare(a.published_at || "");
     return ytShortSortValue(b, shortsSort) - ytShortSortValue(a, shortsSort);
   });
@@ -1538,32 +1754,11 @@ function renderYtShorts() {
     <div class="card">
       <h3>Shorts (${shorts.length})</h3>
       <div class="sort-bar">
-        ${Object.entries(YT_SORT_LABELS).map(([k,v]) => `<button class="${shortsSort===k?'active':''}" onclick="setShortsSort('${k}')">${v}</button>`).join("")}
+        ${sortOptions.map(k => `<button class="${shortsSort===k?'active':''}" onclick="setShortsSort('${k}')">${YT_SORT_LABELS[k]||k}</button>`).join("")}
       </div>
       ${shorts.length === 0 ? '<div class="empty">Henüz Short verisi yok.</div>' : ""}
       <div class="post-list">
-        ${pageItems.map(s => {
-          const l = s.latest || {};
-          const hasMetrics = l.views != null || l.likes != null;
-          return `<div class="post-item" onclick="openShort('${esc(s.id)}')">
-            <div style="width:40px;height:72px;border-radius:6px;overflow:hidden;background:#111;flex-shrink:0">
-              ${s.thumbnail
-                ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" onerror="this.style.opacity=0.3" />`
-                : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:16px">▶</div>'}
-            </div>
-            <div class="post-meta">
-              <div class="post-caption">${esc(s.title || "")}</div>
-              <div class="post-date">${fmtDate(s.published_at)} · ${s.duration_seconds}s</div>
-              <div class="post-badges"><span class="badge badge-short">SHORT</span>${!hasMetrics ? '<span class="badge" style="background:#fef9c3;color:#854d0e">Veri yok</span>' : ""}</div>
-            </div>
-            <div class="post-stats">
-              <div class="post-stat"><b>${l.views != null ? fmtShort(l.views) : "—"}</b><span>izl</span></div>
-              <div class="post-stat"><b>${l.likes != null ? fmtShort(l.likes) : "—"}</b><span>♥</span></div>
-              <div class="post-stat"><b>${l.average_view_percentage != null ? l.average_view_percentage.toFixed(0)+"%" : "—"}</b><span>izl%</span></div>
-              <div class="post-stat"><b>${l.comments != null ? fmtShort(l.comments) : "—"}</b><span>yorum</span></div>
-            </div>
-          </div>`;
-        }).join("")}
+        ${pageItems.map(renderShortRow).join("")}
       </div>
       ${shorts.length > PAGE_SIZE ? `
         <div class="pager">
@@ -1577,46 +1772,226 @@ function renderYtShorts() {
 }
 
 function renderYtDiff() {
-  const yt = (DATA && DATA.youtube) || {};
-  const shorts = yt.shorts || [];
-  const DAYS = 7;
-  const cutoffDate = new Date(Date.now() - DAYS * 86400000);
-  const cutoffStr = cutoffDate.toISOString().split("T")[0];
-
-  const items = shorts.map(s => {
-    const daily = s.daily_history || [];
-    const latest = Number((s.latest||{}).views) || 0;
-    const baselineRow = [...daily].filter(d => d.d <= cutoffStr).pop();
-    const baselineViews = baselineRow ? (Number(baselineRow.views) || 0) : 0;
-    const diff = Math.max(0, latest - baselineViews);
-    return { ...s, _diff: diff, _latest: latest };
-  }).sort((a, b) => b._diff - a._diff);
-
+  const today = new Date().toISOString().split("T")[0];
+  const rangeLabel = ytDiffState.dateFrom && ytDiffState.dateTo
+    ? `${fmtDate(ytDiffState.dateFrom)} – ${fmtDate(ytDiffState.dateTo)}`
+    : `Son ${ytDiffState.days} gün`;
   document.getElementById("pane-yt-diff").innerHTML = `
-    <div class="card">
-      <h3>Son ${DAYS} Gün İzlenme Artışı</h3>
-      <div class="list-meta">${fmtDate(cutoffStr)} – bugün</div>
-      ${items.length === 0 ? '<div class="empty">Henüz veri yok.</div>' : ""}
-      <div class="post-list">
-        ${items.map(s => `
-          <div class="post-item" onclick="openShort('${esc(s.id)}')">
-            <div style="width:40px;height:72px;border-radius:6px;overflow:hidden;background:#111;flex-shrink:0">
-              ${s.thumbnail
-                ? `<img src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" />`
-                : '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#555;font-size:16px">▶</div>'}
+    <details class="diff-filter" open>
+      <summary>
+        <span>İzlenme artışı</span>
+        <span id="yt-diff-filter-meta" style="font-size:12px;color:#888;font-weight:600">${rangeLabel}</span>
+      </summary>
+      <div class="diff-filter-body">
+        <div class="diff-fields">
+          <div class="diff-field" style="grid-column:1/-1">
+            <label>Hızlı aralık</label>
+            <div class="range-sel" style="margin-bottom:0">
+              <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===3?' active':''}" onclick="setYtDiffPreset(3)">3g</button>
+              <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===7?' active':''}" onclick="setYtDiffPreset(7)">7g</button>
+              <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===14?' active':''}" onclick="setYtDiffPreset(14)">14g</button>
+              <button class="diff-preset-btn${!ytDiffState.dateFrom && ytDiffState.days===30?' active':''}" onclick="setYtDiffPreset(30)">30g</button>
             </div>
-            <div class="post-meta">
-              <div class="post-caption">${esc(s.title || "")}</div>
-              <div class="post-date">${fmtDate(s.published_at)}</div>
-              <div class="post-badges"><span class="badge badge-short">SHORT</span></div>
-            </div>
-            <div class="post-stats">
-              <div class="post-stat"><b style="color:#16a34a">+${fmtNum(s._diff)}</b><span>son ${DAYS}g</span></div>
-              <div class="post-stat"><b>${fmtNum(s._latest)}</b><span>toplam</span></div>
-            </div>
-          </div>`).join("")}
+          </div>
+          <div class="diff-field"><label>Başlangıç</label><input id="yt-df-date-from" type="date" value="${ytDiffState.dateFrom||''}" max="${today}" /></div>
+          <div class="diff-field"><label>Bitiş</label><input id="yt-df-date-to" type="date" value="${ytDiffState.dateTo||today}" max="${today}" /></div>
+          <div class="diff-field"><label>Liste limiti</label><input id="yt-df-limit" type="number" min="1" max="500" value="${ytDiffState.limit}" /></div>
+          <div class="diff-field"><label>Grafikteki içerik</label><input id="yt-df-curves" type="number" min="1" max="30" value="${ytDiffState.curveCount}" /></div>
+          <div class="diff-field"><label>Min. artış</label><input id="yt-df-min" type="text" inputmode="numeric" placeholder="0" value="${ytDiffState.minDiff ?? ""}" /></div>
+          <div class="diff-field"><label>Maks. artış</label><input id="yt-df-max" type="text" inputmode="numeric" placeholder="Boş" value="${ytDiffState.maxDiff ?? ""}" /></div>
+        </div>
       </div>
+    </details>
+    <div class="card kpi-grid" id="yt-diff-stats" style="gap:8px"></div>
+    <div class="card">
+      <h3>En Çok İzlenme Artışı</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-diff-bar"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Seçili Shorts İzlenme Artışı</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-diff-line"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="diff-table-head"><span></span><span>Short</span><span>Artış</span><span>Başlangıç</span><span>Toplam</span></div>
+      <div id="yt-diff-results" class="loading">Hesaplanıyor…</div>
     </div>`;
+
+  ["yt-df-date-from", "yt-df-date-to", "yt-df-limit", "yt-df-curves", "yt-df-min", "yt-df-max"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.addEventListener("change", updateYtDiff); el.addEventListener("input", updateYtDiff); }
+  });
+  updateYtDiff();
+}
+
+function setYtDiffPreset(days) {
+  ytDiffState.days = days;
+  ytDiffState.dateFrom = null;
+  ytDiffState.dateTo = null;
+  renderYtDiff();
+}
+
+function readYtDiffControls() {
+  const g = id => document.getElementById(id);
+  const fromVal = g("yt-df-date-from") && g("yt-df-date-from").value;
+  const toVal = g("yt-df-date-to") && g("yt-df-date-to").value;
+  if (fromVal || toVal) {
+    ytDiffState.dateFrom = fromVal || null;
+    ytDiffState.dateTo = toVal || new Date().toISOString().split("T")[0];
+  } else {
+    ytDiffState.dateFrom = null;
+    ytDiffState.dateTo = null;
+  }
+  ytDiffState.limit = Math.max(1, Math.min(500, parseInt(g("yt-df-limit").value, 10) || 25));
+  ytDiffState.curveCount = Math.max(1, Math.min(30, parseInt(g("yt-df-curves").value, 10) || 5));
+  ytDiffState.minDiff = parseDiffAmount(g("yt-df-min").value);
+  ytDiffState.maxDiff = parseDiffAmount(g("yt-df-max").value);
+}
+
+function computeYtDiffRows() {
+  const yt = (DATA && DATA.youtube) || {};
+  const generated = DATA && DATA.generated_at ? parseDate(DATA.generated_at) : new Date();
+  let startAt, endAt;
+  if (ytDiffState.dateFrom && ytDiffState.dateTo) {
+    startAt = new Date(ytDiffState.dateFrom + "T00:00:00");
+    endAt = new Date(ytDiffState.dateTo + "T23:59:59");
+    if (startAt > endAt) [startAt, endAt] = [endAt, startAt];
+  } else {
+    endAt = generated;
+    startAt = new Date(generated.getTime() - ytDiffState.days * 86400000);
+  }
+  const rows = [];
+  for (const short of yt.shorts || []) {
+    const points = buildShortViewsHistory(short);
+    if (!points.length) continue;
+    const baseline = metricValueAt(points, startAt);
+    const latest = metricValueAt(points, endAt);
+    const diff = Math.max(0, latest.value - baseline.value);
+    if (ytDiffState.minDiff != null && diff < ytDiffState.minDiff) continue;
+    if (ytDiffState.maxDiff != null && diff > ytDiffState.maxDiff) continue;
+    rows.push({ short, points, diff, baseline: baseline.value, baselineAt: baseline.at, latestValue: latest.value, endAt, startAt });
+  }
+  rows.sort((a, b) => b.diff - a.diff);
+  return rows;
+}
+
+function ytDiffSpanDays() {
+  if (ytDiffState.dateFrom && ytDiffState.dateTo) {
+    const start = new Date(ytDiffState.dateFrom + "T00:00:00");
+    const end = new Date(ytDiffState.dateTo + "T23:59:59");
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      return Math.max(1, Math.ceil(Math.abs(end - start) / 86400000));
+    }
+  }
+  return ytDiffState.days;
+}
+
+function updateYtDiff() {
+  readYtDiffControls();
+  const allRows = computeYtDiffRows();
+  const rows = allRows.slice(0, ytDiffState.limit);
+  const sum = allRows.reduce((total, row) => total + row.diff, 0);
+  const rangeLabel = ytDiffState.dateFrom && ytDiffState.dateTo
+    ? `${fmtDate(ytDiffState.dateFrom)} – ${fmtDate(ytDiffState.dateTo)}`
+    : `Son ${ytDiffState.days}g`;
+  const metaEl = document.getElementById("yt-diff-filter-meta");
+  if (metaEl) metaEl.textContent = `${rangeLabel} · ${fmtNum(ytDiffState.limit)} sonuç · ${fmtNum(ytDiffState.curveCount)} eğri`;
+  const statsEl = document.getElementById("yt-diff-stats");
+  if (statsEl) statsEl.innerHTML = `
+    <div class="kpi"><div class="kpi-label">Eşleşen Short</div><div class="kpi-value">${fmtNum(allRows.length)}</div></div>
+    <div class="kpi"><div class="kpi-label">Toplam artış</div><div class="kpi-value">${fmtShort(sum)}</div></div>
+    <div class="kpi"><div class="kpi-label">En yüksek artış</div><div class="kpi-value">${fmtShort(allRows[0] && allRows[0].diff)}</div></div>
+    <div class="kpi"><div class="kpi-label">Kapsam</div><div class="kpi-value">${rangeLabel}</div></div>`;
+
+  if (chartsByTab.ytDiffBar) { try { chartsByTab.ytDiffBar.destroy(); } catch(e){} delete chartsByTab.ytDiffBar; }
+  if (chartsByTab.ytDiffLine) { try { chartsByTab.ytDiffLine.destroy(); } catch(e){} delete chartsByTab.ytDiffLine; }
+  drawYtDiffBarChart(rows);
+  drawYtDiffLineChart(rows.slice(0, ytDiffState.curveCount));
+  const resultsEl = document.getElementById("yt-diff-results");
+  if (resultsEl) {
+    resultsEl.className = "";
+    resultsEl.innerHTML = rows.length ? rows.map(renderYtDiffRow).join("") : '<div class="empty">Eşleşen Short bulunamadı.</div>';
+  }
+}
+
+function renderYtDiffRow(row) {
+  const s = row.short;
+  const spanLabel = ytDiffState.dateFrom && ytDiffState.dateTo ? fmtDate(ytDiffState.dateFrom) : `${ytDiffState.days}g`;
+  return `
+    <button class="diff-row" onclick="openShort('${esc(s.id)}')">
+      ${s.thumbnail ? `<img class="diff-thumb" src="${esc(s.thumbnail)}" referrerpolicy="no-referrer" onerror="this.style.opacity=0.25" />` : '<div class="diff-thumb"></div>'}
+      <div class="post-meta">
+        <div class="post-caption">${esc(s.title || "")}</div>
+        <div class="post-date">${fmtDate(s.published_at)}</div>
+        <div class="post-badges"><span class="badge badge-short">SHORT</span></div>
+      </div>
+      <div class="diff-metric diff-gain"><b>+${fmtNum(row.diff)}</b><span>${spanLabel}</span></div>
+      <div class="diff-metric diff-base"><b>${fmtNum(row.baseline)}</b><span>${fmtDate(row.baselineAt)}</span></div>
+      <div class="diff-metric diff-total"><b>${fmtNum(row.latestValue)}</b><span>toplam</span></div>
+    </button>`;
+}
+
+function buildYtDiffPoints(row) {
+  const points = [{ x: row.startAt, y: 0 }];
+  for (const point of row.points) {
+    if (point.x < row.startAt || point.x > row.endAt) continue;
+    points.push({ x: point.x, y: Math.max(0, point.y - row.baseline) });
+  }
+  if (points.length === 1 || points[points.length - 1].x < row.endAt) {
+    points.push({ x: row.endAt, y: row.diff });
+  }
+  return points;
+}
+
+function drawYtDiffBarChart(rows) {
+  const ctx = document.getElementById("chart-yt-diff-bar");
+  if (!ctx) return;
+  chartsByTab.ytDiffBar = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: rows.map((_, i) => `#${i + 1}`),
+      datasets: [{ label: "İzlenme artışı", data: rows.map(row => row.diff), backgroundColor: rows.map((_, i) => DIFF_COLORS[i % DIFF_COLORS.length]), borderRadius: 5 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => rows[items[0].dataIndex] ? rows[items[0].dataIndex].short.title || "Short" : "",
+        label: item => `Artış: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: { x: { ticks: { font: { size: 10 } } }, y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } } }
+    }
+  });
+}
+
+function drawYtDiffLineChart(rows) {
+  const ctx = document.getElementById("chart-yt-diff-line");
+  if (!ctx) return;
+  chartsByTab.ytDiffLine = new Chart(ctx, {
+    type: "line",
+    data: { datasets: rows.map((row, i) => ({
+      label: `#${i + 1} ${row.short.title || "Short"}`,
+      data: buildYtDiffPoints(row),
+      borderColor: DIFF_COLORS[i % DIFF_COLORS.length],
+      backgroundColor: "transparent",
+      tension: 0.2,
+      pointRadius: 0,
+      pointHoverRadius: 3,
+      borderWidth: 2,
+    })) },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", intersect: false },
+      plugins: { legend: { position: "bottom", labels: { boxWidth: 10, boxHeight: 10, font: { size: 10 }, generateLabels(chart) {
+        return Chart.defaults.plugins.legend.labels.generateLabels(chart).map(label => ({ ...label, text: label.text.slice(0, 48) }));
+      }}}, tooltip: { callbacks: {
+        title: items => items[0] ? new Date(items[0].parsed.x).toLocaleString("tr-TR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }) : "",
+        label: item => `${item.dataset.label}: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { type: "time", time: { unit: ytDiffSpanDays() <= 3 ? "hour" : ytDiffSpanDays() <= 14 ? "day" : "week", displayFormats: { hour: "d MMM HH:mm", day: "d MMM", week: "d MMM" } }, ticks: { font: { size: 10 }, maxRotation: 0, maxTicksLimit: 8 } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
 }
 
 function renderYtHesap() {
@@ -1625,43 +2000,44 @@ function renderYtHesap() {
   const subSeries = yt.subscriber_timeseries || [];
   const shorts = yt.shorts || [];
   const totalViews = shorts.reduce((s, x) => s + (Number((x.latest||{}).views) || 0), 0);
+  const dailyViews = computeYtDailyViews(shorts, ytRange);
+  const totalViewsInRange = dailyViews.reduce((sum, row) => sum + (row.v || 0), 0);
 
   document.getElementById("pane-yt-hesap").innerHTML = `
     <div class="card">
       <h3>Kanal İstatistikleri</h3>
+      <div class="range-sel">
+        <button class="${ytRange===7?'active':''}" onclick="setYtRange(7)">7g</button>
+        <button class="${ytRange===30?'active':''}" onclick="setYtRange(30)">30g</button>
+        <button class="${ytRange===90?'active':''}" onclick="setYtRange(90)">90g</button>
+        <button class="${ytRange===365?'active':''}" onclick="setYtRange(365)">1y</button>
+      </div>
       <div class="kpi-grid">
         <div class="kpi"><div class="kpi-label">Abone</div><div class="kpi-value">${fmtNum(ch.subscriber_count)}</div></div>
         <div class="kpi"><div class="kpi-label">Toplam Video</div><div class="kpi-value">${fmtNum(ch.video_count)}</div></div>
         <div class="kpi"><div class="kpi-label">Kanal Toplam İzl.</div><div class="kpi-value">${fmtShort(ch.view_count)}</div></div>
         <div class="kpi"><div class="kpi-label">Shorts İzlenme</div><div class="kpi-value">${fmtShort(totalViews)}</div></div>
+        <div class="kpi"><div class="kpi-label">Son ${ytRange}g İzlenme</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div></div>
       </div>
     </div>
     ${subSeries.length ? `
     <div class="card">
       <h3>Abone Trendi</h3>
       <div class="chart-wrap"><canvas id="chart-yt-subs"></canvas></div>
+    </div>` : ""}
+    ${dailyViews.length ? `
+    <div class="card">
+      <h3>Günlük İzlenme</h3>
+      <div class="chart-wrap"><canvas id="chart-yt-account-views"></canvas></div>
     </div>` : ""}`;
 
   if (subSeries.length) {
     setTimeout(() => {
-      const ctx = document.getElementById("chart-yt-subs");
-      if (!ctx) return;
-      chartsByTab.ytSubs = new Chart(ctx, {
-        type: "line",
-        data: { datasets: [{ label: "Abone", data: subSeries.map(p => ({ x: new Date(p.t), y: p.v })),
-          borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.1)", fill: true,
-          tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          interaction: { mode: "nearest", axis: "x", intersect: false },
-          plugins: { legend: { display: false } },
-          scales: {
-            x: { type: "time", time: { unit: "day", displayFormats: { day: "d MMM" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
-            y: { ticks: { font: { size: 10 } } }
-          }
-        }
-      });
+      drawYtSubscriberChart("chart-yt-subs", subSeries, ytRange);
+      if (dailyViews.length) drawYtDailyViewsChart("chart-yt-account-views", dailyViews, "Günlük İzlenme");
     }, 50);
+  } else if (dailyViews.length) {
+    setTimeout(() => drawYtDailyViewsChart("chart-yt-account-views", dailyViews, "Günlük İzlenme"), 50);
   }
 }
 
@@ -1686,11 +2062,27 @@ function renderOzet() {
   const subSeries = yt.subscriber_timeseries || [];
 
   const dailyViewsBySource = DATA.daily_views_timeseries || {};
-  const dailyViews = [...(dailyViewsBySource["posts"] || [])].sort((a, b) => (a.d||"").localeCompare(b.d||""));
-  const last30Views = dailyViews.slice(-30);
-  const totalViewsLast30 = last30Views.reduce((sum, row) => sum + (row.v || 0), 0);
+  const allDailyViews = [...(dailyViewsBySource["posts"] || [])].sort((a, b) => (a.d||"").localeCompare(b.d||""));
+  const igViewsFiltered = allDailyViews.slice(Math.max(0, allDailyViews.length - ozetRange));
+  const totalIgViews = igViewsFiltered.reduce((sum, row) => sum + (row.v || 0), 0);
+
+  const ytDailyViews = computeYtDailyViews(shorts, ozetRange);
+  const totalYtDailyViews = ytDailyViews.reduce((sum, row) => sum + (row.v || 0), 0);
+
+  const rangeButtons = `
+    <div class="range-sel">
+      <button class="${ozetRange===7?'active':''}" onclick="setOzetRange(7)">7g</button>
+      <button class="${ozetRange===30?'active':''}" onclick="setOzetRange(30)">30g</button>
+      <button class="${ozetRange===90?'active':''}" onclick="setOzetRange(90)">90g</button>
+      <button class="${ozetRange===365?'active':''}" onclick="setOzetRange(365)">1y</button>
+    </div>`;
 
   document.getElementById("pane-ozet").innerHTML = `
+    <div class="card">
+      <h3>Zaman Aralığı</h3>
+      ${rangeButtons}
+      <div style="font-size:12px;color:#888;margin-top:4px">Bu seçim tüm Özet grafiklerini etkiler.</div>
+    </div>
     <div class="card" style="border-left:4px solid #833ab4">
       <h3>📷 Instagram</h3>
       <div class="kpi-grid">
@@ -1702,20 +2094,14 @@ function renderOzet() {
     </div>
     <div class="card">
       <h3>Takipçi Trendi</h3>
-      <div class="range-sel">
-        <button class="${followerRange===7?'active':''}" onclick="setFollowerRange(7)">7g</button>
-        <button class="${followerRange===30?'active':''}" onclick="setFollowerRange(30)">30g</button>
-        <button class="${followerRange===90?'active':''}" onclick="setFollowerRange(90)">90g</button>
-        <button class="${followerRange===365?'active':''}" onclick="setFollowerRange(365)">1y</button>
-      </div>
       <div class="chart-wrap"><canvas id="chart-ozet-follower"></canvas></div>
     </div>
     <div class="card">
-      <h3>Günlük İzlenme (Post + Reels, son 30 gün)</h3>
+      <h3>IG Günlük İzlenme (Post + Reels)</h3>
       <div class="kpi-grid" style="margin-bottom:10px">
-        <div class="kpi"><div class="kpi-label">Toplam</div><div class="kpi-value">${fmtNum(totalViewsLast30)}</div></div>
+        <div class="kpi"><div class="kpi-label">Son ${ozetRange}g toplam</div><div class="kpi-value">${fmtNum(totalIgViews)}</div></div>
       </div>
-      ${last30Views.length ? '<div class="chart-wrap"><canvas id="chart-ozet-igviews"></canvas></div>' : '<div class="empty">Henüz veri yok.</div>'}
+      ${igViewsFiltered.length ? '<div class="chart-wrap"><canvas id="chart-ozet-igviews"></canvas></div>' : '<div class="empty">Henüz veri yok.</div>'}
     </div>
     ${ch.channel_id ? `
     <div class="card" style="border-left:4px solid #ff0000;margin-top:8px">
@@ -1731,23 +2117,32 @@ function renderOzet() {
     <div class="card">
       <h3>Abone Trendi (YouTube)</h3>
       <div class="chart-wrap"><canvas id="chart-ozet-ytsubs"></canvas></div>
+    </div>` : ""}
+    ${ytDailyViews.length ? `
+    <div class="card">
+      <h3>YT Günlük İzlenme (Shorts)</h3>
+      <div class="kpi-grid" style="margin-bottom:10px">
+        <div class="kpi"><div class="kpi-label">Son ${ozetRange}g toplam</div><div class="kpi-value">${fmtNum(totalYtDailyViews)}</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-ozet-ytviews"></canvas></div>
     </div>` : ""}` : ""}`;
 
   // Charts
   setTimeout(() => {
     drawOzetFollowerChart();
-    if (last30Views.length) drawOzetIgViewsChart(last30Views);
+    if (igViewsFiltered.length) drawOzetIgViewsChart(igViewsFiltered);
     if (ch.channel_id && subSeries.length) drawOzetYtSubsChart(subSeries);
+    if (ch.channel_id && ytDailyViews.length) drawOzetYtViewsChart(ytDailyViews);
   }, 50);
 }
 
 function drawOzetFollowerChart() {
   const series = DATA.follower_timeseries || [];
-  const cutoffMs = Date.now() - followerRange * 86400000;
+  const cutoffMs = Date.now() - ozetRange * 86400000;
   const filtered = series.map(p => ({ x: new Date(p.t), y: p.v })).filter(p => p.x.getTime() >= cutoffMs).sort((a,b) => a.x - b.x);
   const ctx = document.getElementById("chart-ozet-follower");
   if (!ctx) return;
-  const tickUnit = followerRange <= 7 ? "day" : followerRange <= 30 ? "week" : "month";
+  const tickUnit = ozetRange <= 7 ? "day" : ozetRange <= 30 ? "week" : "month";
   chartsByTab.ozetFollower = new Chart(ctx, {
     type: "line",
     data: { datasets: [{ label: "Takipçi", data: filtered, borderColor: "#833ab4", backgroundColor: "rgba(131,58,180,0.1)", fill: true, tension: 0.25, pointRadius: 0, pointHitRadius: 18, borderWidth: 2 }] },
@@ -1789,16 +2184,96 @@ function drawOzetIgViewsChart(series) {
 function drawOzetYtSubsChart(subSeries) {
   const ctx = document.getElementById("chart-ozet-ytsubs");
   if (!ctx) return;
+  const cutoffMs = Date.now() - ozetRange * 86400000;
+  const filtered = subSeries.map(p => ({ x: new Date(p.t), y: p.v })).filter(p => p.x.getTime() >= cutoffMs).sort((a,b) => a.x - b.x);
+  const tickUnit = ozetRange <= 7 ? "day" : ozetRange <= 30 ? "week" : "month";
   chartsByTab.ozetYtSubs = new Chart(ctx, {
     type: "line",
-    data: { datasets: [{ label: "Abone", data: subSeries.map(p => ({ x: new Date(p.t), y: p.v })), borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.1)", fill: true, tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
+    data: { datasets: [{ label: "Abone", data: filtered, borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.1)", fill: true, tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: "nearest", axis: "x", intersect: false },
       plugins: { legend: { display: false } },
       scales: {
-        x: { type: "time", time: { unit: "day", displayFormats: { day: "d MMM" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+        x: { type: "time", time: { unit: tickUnit, displayFormats: { day: "d MMM", week: "d MMM", month: "MMM yy" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
         y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function drawOzetYtViewsChart(series) {
+  const ctx = document.getElementById("chart-ozet-ytviews");
+  if (!ctx) return;
+  chartsByTab.ozetYtViews = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: series.map(x => x.d),
+      datasets: [{ label: "Günlük İzlenme (Shorts)", data: series.map(x => x.v || 0), backgroundColor: "#cc0000", borderRadius: 4, maxBarThickness: 28 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => fmtDate(items[0].label),
+        label: item => `İzlenme: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { ticks: { maxRotation: 0, maxTicksLimit: 8, font: { size: 10 }, callback: (_, i) => { const d = new Date(series[i].d+"T00:00:00"); return d.toLocaleDateString("tr-TR",{day:"2-digit",month:"short"}); } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
+}
+
+function drawYtSubscriberChart(canvasId, subSeries, rangeDays) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  const cutoffMs = Date.now() - rangeDays * 86400000;
+  const filtered = (subSeries || [])
+    .map(p => ({ x: new Date(p.t), y: Number(p.v) }))
+    .filter(p => Number.isFinite(p.y) && !isNaN(p.x.getTime()) && p.x.getTime() >= cutoffMs)
+    .sort((a, b) => a.x - b.x);
+  const tickUnit = rangeDays <= 7 ? "day" : rangeDays <= 30 ? "week" : "month";
+  const chartKey = `ytSubs-${canvasId}`;
+  if (chartsByTab[chartKey]) { try { chartsByTab[chartKey].destroy(); } catch(e){} }
+  chartsByTab[chartKey] = new Chart(ctx, {
+    type: "line",
+    data: { datasets: [{ label: "Abone", data: filtered, borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.1)", fill: true, tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => items[0] ? new Date(items[0].parsed.x).toLocaleString("tr-TR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }) : "",
+        label: item => `Abone: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { type: "time", time: { unit: tickUnit, displayFormats: { day: "d MMM", week: "d MMM", month: "MMM yy" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function drawYtDailyViewsChart(canvasId, series, label) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  const chartKey = `ytViews-${canvasId}`;
+  if (chartsByTab[chartKey]) { try { chartsByTab[chartKey].destroy(); } catch(e){} }
+  chartsByTab[chartKey] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: series.map(x => x.d),
+      datasets: [{ label, data: series.map(x => x.v || 0), backgroundColor: "#cc0000", borderRadius: 4, maxBarThickness: 28 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => fmtDate(items[0].label),
+        label: item => `${label}: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { ticks: { maxRotation: 0, maxTicksLimit: 8, font: { size: 10 }, callback: (_, i) => { const d = new Date(series[i].d+"T00:00:00"); return d.toLocaleDateString("tr-TR",{day:"2-digit",month:"short"}); } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
       }
     }
   });
@@ -1807,11 +2282,41 @@ function drawOzetYtSubsChart(subSeries) {
 function ytShortSortValue(s, key) {
   const l = s.latest || {};
   if (key === "posted_at") return s.published_at || "";
-  return Number(l[key]) || 0;
+  return Number.isFinite(Number(l[key])) ? Number(l[key]) : 0;
 }
 
 function setShortsSort(k) { shortsSort = k; shortsPage = 1; renderYtShorts(); }
 function setShortsPage(p) { shortsPage = Math.max(1, p); renderYtShorts(); }
+
+function buildShortViewsHistory(s) {
+  // YouTube Analytics daily rows are daily deltas. Anchor them to the latest
+  // lifetime view count so the chart reads as a true cumulative total.
+  const daily = [...(s.daily_history || [])].sort((a, b) => (a.d||"").localeCompare(b.d||""));
+  const latestViews = Number(s.latest && s.latest.views);
+  if (daily.length) {
+    const totalDaily = daily.reduce((sum, d) => sum + (Number(d.views) || 0), 0);
+    let cumulative = Number.isFinite(latestViews) ? Math.max(0, latestViews - totalDaily) : 0;
+    const points = [];
+    const firstDate = daily[0].d;
+    if (firstDate) points.push({ x: new Date(firstDate + "T00:00:00"), y: cumulative });
+    for (const d of daily) {
+      cumulative += Number(d.views) || 0;
+      points.push({ x: new Date(d.d + "T23:59:59"), y: cumulative });
+    }
+    const latestAt = parseDate((s.latest && s.latest.fetched_at) || (DATA && DATA.generated_at) || new Date());
+    if (Number.isFinite(latestViews) && !isNaN(latestAt.getTime()) && (!points.length || points[points.length - 1].y !== latestViews)) {
+      points.push({ x: latestAt, y: latestViews });
+    }
+    return points.filter(p => !isNaN(p.x.getTime())).sort((a, b) => a.x - b.x);
+  }
+
+  // Hourly snapshots are cumulative totals.
+  const hourly = (s.history || [])
+    .map(x => ({ x: parseDate(x.t), y: Number(x.views) }))
+    .filter(x => Number.isFinite(x.y) && x.y > 0 && !isNaN(x.x.getTime()))
+    .sort((a, b) => a.x - b.x);
+  return hourly;
+}
 
 function openShort(id) {
   const yt = (DATA && DATA.youtube) || {};
@@ -1820,6 +2325,7 @@ function openShort(id) {
   const l = s.latest || {};
   const daily = s.daily_history || [];
   const hourly = s.history || [];
+  const dailyMetricOptions = ytDailyMetricOptions(daily);
 
   const stats = [
     ["İzlenme", fmtNum(l.views)],
@@ -1852,11 +2358,16 @@ function openShort(id) {
     <div class="kpi-grid" style="margin-bottom:12px">
       ${stats.filter(([,v]) => v !== "—").map(([k,v]) => `<div class="kpi"><div class="kpi-label">${k}</div><div class="kpi-value" style="font-size:16px">${v}</div></div>`).join("")}
     </div>
-    ${daily.length ? `
+    <div class="detail-section">
+      <h3>Toplam İzlenme Geçmişi</h3>
+      <div class="detail-note" id="short-history-note"></div>
+      <div class="chart-wrap"><canvas id="chart-short-history"></canvas></div>
+    </div>
+    ${daily.length && dailyMetricOptions.length ? `
     <div class="detail-section">
       <h3>Günlük Geçmiş</h3>
       <div class="metric-toggle" id="yt-daily-metric-toggle">
-        ${["views","likes","average_view_percentage","subscribers_gained"].map((k,i) =>
+        ${dailyMetricOptions.map((k,i) =>
           `<button class="metric-btn${i===0?' active':''}" onclick="setYtDailyMetric('${k}',this)">${YT_SORT_LABELS[k]||k}</button>`
         ).join("")}
       </div>
@@ -1866,13 +2377,13 @@ function openShort(id) {
     <div class="detail-section">
       <h3>Saatlik Snapshot (Gün İçi Takip)</h3>
       <div class="detail-table">
-        <div class="detail-row head"><span>Zaman</span><span>İzl.</span><span>Beğ.</span><span>İzl.%</span><span>Göst.</span></div>
+        <div class="detail-row head"><span>Zaman</span><span>İzl.</span><span>Beğ.</span><span>İzl.%</span><span>Payl.</span></div>
         ${hourly.slice(-8).reverse().map(h => `<div class="detail-row">
           <span>${fmtDateTime(h.t)}</span>
           <span>${fmtNum(h.views)}</span>
           <span>${fmtNum(h.likes)}</span>
-          <span>${h.avg_view_pct != null ? h.avg_view_pct.toFixed(1)+"%" : "—"}</span>
-          <span>${fmtNum(h.impressions)}</span>
+          <span>${(h.average_view_percentage ?? h.avg_view_pct) != null ? Number(h.average_view_percentage ?? h.avg_view_pct).toFixed(1)+"%" : "—"}</span>
+          <span>${fmtNum(h.shares)}</span>
         </div>`).join("")}
       </div>
     </div>` : ""}`;
@@ -1880,9 +2391,39 @@ function openShort(id) {
   document.getElementById("modal-bg").classList.add("open");
   document.body.style.overflow = "hidden";
 
-  if (daily.length) {
-    setTimeout(() => drawYtDailyChart(daily, "views"), 50);
+  const shortViewsHistory = buildShortViewsHistory(s);
+  setTimeout(() => {
+    drawShortHistoryChart(shortViewsHistory, s);
+    if (daily.length && dailyMetricOptions.length) drawYtDailyChart(daily, dailyMetricOptions[0]);
+  }, 50);
+}
+
+function drawShortHistoryChart(viewsData, s) {
+  const ctx = document.getElementById("chart-short-history");
+  if (!ctx) return;
+  const noteEl = document.getElementById("short-history-note");
+  if (!viewsData.length) {
+    if (noteEl) noteEl.textContent = "Yeterli izlenme geçmişi yok.";
+    return;
   }
+  const first = viewsData[0], last = viewsData[viewsData.length - 1];
+  if (noteEl) noteEl.textContent = `${fmtNum(first.y)} → ${fmtNum(last.y)} · +${fmtNum(last.y - first.y)}`;
+  chartsByTab.shortHistory = new Chart(ctx, {
+    type: "line",
+    data: { datasets: [{ label: "Toplam izlenme", data: viewsData, borderColor: "#cc0000", backgroundColor: "rgba(204,0,0,0.08)", fill: true, tension: 0.25, borderWidth: 2, pointRadius: 0, pointHitRadius: 18 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "nearest", axis: "x", intersect: false },
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => { const d = new Date(items[0].parsed.x); return d.toLocaleString("tr-TR", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); },
+        label: item => `İzlenme: ${fmtNum(item.parsed.y)}`
+      }}},
+      scales: {
+        x: { type: "time", time: { unit: viewsData.length > 30 ? "week" : "day", displayFormats: { day: "d MMM", week: "d MMM" } }, ticks: { maxRotation: 0, maxTicksLimit: 6, font: { size: 10 } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
 }
 
 let _ytDailyData = null;
@@ -1896,26 +2437,27 @@ function drawYtDailyChart(daily, metric) {
   _ytDailyData = daily;
   const ctx = document.getElementById("chart-yt-daily");
   if (!ctx) return;
+  const isPercent = metric === "average_view_percentage";
   if (chartsByTab.ytDaily) { try { chartsByTab.ytDaily.destroy(); } catch(e){} }
   chartsByTab.ytDaily = new Chart(ctx, {
     type: "bar",
     data: {
       labels: daily.map(d => d.d),
       datasets: [{ label: YT_SORT_LABELS[metric]||metric,
-        data: daily.map(d => d[metric] || 0),
+        data: daily.map(d => Number(d[metric]) || 0),
         backgroundColor: "#cc0000", borderRadius: 4, maxBarThickness: 28 }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: {
         title: items => fmtDate(items[0].label),
-        label: item => `${YT_SORT_LABELS[metric]||metric}: ${metric==="average_view_percentage" ? item.parsed.y.toFixed(1)+"%" : fmtNum(item.parsed.y)}`
+        label: item => `${YT_SORT_LABELS[metric]||metric}: ${isPercent ? item.parsed.y.toFixed(1)+"%" : fmtNum(item.parsed.y)}`
       }}},
       scales: {
         x: { ticks: { maxRotation: 0, maxTicksLimit: 8, font: { size: 10 },
           callback: (_, i) => { const d = new Date(daily[i].d+"T00:00:00"); return d.toLocaleDateString("tr-TR",{day:"2-digit",month:"short"}); }
         }},
-        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+        y: { ticks: { font: { size: 10 }, callback: v => isPercent ? `${v}%` : fmtShort(v) } }
       }
     }
   });

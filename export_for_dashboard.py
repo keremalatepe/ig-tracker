@@ -564,15 +564,20 @@ def _build_yt_payload(conn: sqlite3.Connection) -> dict:
 
             # Saatlik snapshot geçmişi (gün içi takip)
             history_rows = conn.execute("""
-                SELECT fetched_at, views, likes, average_view_percentage,
-                       impressions, impressions_ctr
+                SELECT fetched_at, views, likes, comments, shares,
+                       estimated_minutes_watched, average_view_duration,
+                       average_view_percentage, impressions, impressions_ctr,
+                       subscribers_gained, subscribers_lost
                 FROM yt_video_snapshots
                 WHERE video_id = ?
                 ORDER BY id DESC LIMIT 30
             """, (video_id,)).fetchall()
             history = [
-                {"t": h[0], "views": h[1], "likes": h[2],
-                 "avg_view_pct": h[3], "impressions": h[4], "ctr": h[5]}
+                {"t": h[0], "views": h[1], "likes": h[2], "comments": h[3],
+                 "shares": h[4], "estimated_minutes_watched": h[5],
+                 "average_view_duration": h[6], "average_view_percentage": h[7],
+                 "impressions": h[8], "impressions_ctr": h[9],
+                 "subscribers_gained": h[10], "subscribers_lost": h[11]}
                 for h in reversed(history_rows)
             ]
 
