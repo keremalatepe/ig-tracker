@@ -1,4 +1,4 @@
-name: Instagram Data Fetcher
+name: Social Media Data Fetcher
 
 on:
   schedule:
@@ -18,6 +18,15 @@ on:
           - weekly
           - full
           - backfill
+      yt_mode:
+        description: "YouTube modu"
+        required: false
+        default: "auto"
+        type: choice
+        options:
+          - auto
+          - hourly
+          - full
 
 permissions:
   contents: write
@@ -48,19 +57,31 @@ jobs:
       - name: Restore token cache
         uses: actions/cache@v4
         with:
-          path: token.json
-          key: ig-token-${{ github.run_id }}
-          restore-keys: ig-token-
+          path: |
+            token.json
+            yt_token.json
+          key: tokens-${{ github.run_id }}
+          restore-keys: tokens-
 
-      - name: Run schema migration
+      - name: Run Instagram schema migration
         run: python migrate_schema.py
 
-      - name: Run fetcher
+      - name: Run YouTube schema migration
+        run: python migrate_yt_schema.py
+
+      - name: Run Instagram fetcher
         env:
           IG_APP_ID: ${{ secrets.IG_APP_ID }}
           IG_APP_SECRET: ${{ secrets.IG_APP_SECRET }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
         run: python ig_fetcher.py --mode "${{ github.event.inputs.mode || 'auto' }}"
+
+      - name: Run YouTube fetcher
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+        run: python yt_fetcher.py --mode "${{ github.event.inputs.yt_mode || 'auto' }}"
 
       - name: Build dashboard JSON
         run: python export_for_dashboard.py
@@ -69,6 +90,6 @@ jobs:
         run: |
           git config user.name "ig-bot"
           git config user.email "bot@noreply.github.com"
-          git add instagram_data.db dashboard_data.json
+          git add instagram_data.db youtube_data.db dashboard_data.json
           git diff --staged --quiet || git commit -m "📊 Veri güncellendi: $(date -u '+%Y-%m-%d %H:%M UTC') [${{ github.event.inputs.mode || 'auto' }}]"
           git push

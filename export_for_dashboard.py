@@ -52,6 +52,7 @@ import sqlite3
 from datetime import datetime, timezone, timedelta
 
 DB_PATH = os.environ.get("IG_DB_PATH", "instagram_data.db")
+YT_DB_PATH = os.environ.get("YT_DB_PATH", "youtube_data.db")
 OUTPUT_PATH = os.environ.get("DASHBOARD_JSON", "dashboard_data.json")
 
 # Limitler
@@ -482,6 +483,111 @@ def get_fetch_runs(conn: sqlite3.Connection) -> list:
     ]
 
 
+def get_yt_data() -> dict:
+    """youtube_data.db varsa YouTube verilerini döndürür, yoksa boş dict."""
+    if not os.path.exists(YT_DB_PATH):
+        return {}
+    try:
+        conn = sqlite3.connect(YT_DB_PATH)
+        return _build_yt_payload(conn)
+    except Exception as e:
+        print(f"[export] YouTube verisi alınamadı: {e}")
+        return {}
+    finally:
+        conn.close()
+
+
+def _yt_safe(conn: sqlite3.Connection, table: str) -> bool:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ).fetchone()
+    return row is not None
+
+
+def _build_yt_payload(conn: sqlite3.Connection) -> dict:
+    channel = {}
+    if _yt_safe(conn, "yt_channel_snapshots"):
+        row = conn.execute("""
+            SELECT channel_id, channel_title, subscriber_count, view_count, video_count, fetched_at
+            FROM yt_channel_snapshots ORDER BY id DESC LIMIT 1
+        """).fetchone()
+        if row:
+            channel = {
+                "channel_id": row[0], "channel_title": row[1],
+                "subscriber_count": row[2], "view_count": row[3],
+                "video_count": row[4], "fetched_at": row[5],
+            }
+
+    subscriber_timeseries = []
+    if _yt_safe(conn, "yt_channel_snapshots"):
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+        rows = conn.execute("""
+            SELECT fetched_at, subscriber_count FROM yt_channel_snapshots
+            WHERE fetched_at >= ? AND subscriber_count IS NOT NULL
+            ORDER BY fetched_at
+        """, (cutoff,)).fetchall()
+        subscriber_timeseries = [{"t": r[0], "v": r[1]} for r in rows]
+
+    shorts = []
+    if _yt_safe(conn, "yt_videos") and _yt_safe(conn, "yt_video_snapshots"):
+        video_rows = conn.execute("""
+            SELECT video_id, title, published_at, thumbnail_url, duration_seconds
+            FROM yt_videos WHERE is_short = 1
+            ORDER BY published_at DESC
+            LIMIT 200
+        """).fetchall()
+
+        for vrow in video_rows:
+            video_id, title, published_at, thumbnail, duration = vrow
+
+            snap = conn.execute("""
+                SELECT views, likes, comments, shares,
+                       estimated_minutes_watched, average_view_duration,
+                       average_view_percentage, impressions, impressions_ctr,
+                       subscribers_gained, subscribers_lost, fetched_at
+                FROM yt_video_snapshots
+                WHERE video_id = ?
+                ORDER BY id DESC LIMIT 1
+            """, (video_id,)).fetchone()
+
+            latest = {}
+            if snap:
+                keys = ["views", "likes", "comments", "shares",
+                        "estimated_minutes_watched", "average_view_duration",
+                        "average_view_percentage", "impressions", "impressions_ctr",
+                        "subscribers_gained", "subscribers_lost", "fetched_at"]
+                latest = dict(zip(keys, snap))
+
+            history_rows = conn.execute("""
+                SELECT fetched_at, views, likes, average_view_percentage,
+                       impressions, impressions_ctr
+                FROM yt_video_snapshots
+                WHERE video_id = ?
+                ORDER BY id DESC LIMIT 30
+            """, (video_id,)).fetchall()
+            history = [
+                {"t": h[0], "views": h[1], "likes": h[2],
+                 "avg_view_pct": h[3], "impressions": h[4], "ctr": h[5]}
+                for h in reversed(history_rows)
+            ]
+
+            shorts.append({
+                "id": video_id,
+                "title": title,
+                "published_at": published_at,
+                "thumbnail": thumbnail,
+                "duration_seconds": duration,
+                "latest": latest,
+                "history": history,
+            })
+
+    return {
+        "channel": channel,
+        "subscriber_timeseries": subscriber_timeseries,
+        "shorts": shorts,
+    }
+
+
 def build_payload() -> dict:
     conn = sqlite3.connect(DB_PATH)
     try:
@@ -498,6 +604,7 @@ def build_payload() -> dict:
             "posts": get_posts(conn),
             "stories": get_stories(conn),
             "recent_runs": get_fetch_runs(conn),
+            "youtube": get_yt_data(),
         }
         return payload
     finally:
