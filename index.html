@@ -572,10 +572,10 @@ const esc = s => String(s || "").replace(/[&<>"']/g, ch => ({ "&":"&amp;", "<":"
 
 let DATA = null;
 let activeTab = "summary";
-let followerRange = 30;
+let followerRange = 7;
 let viewsRange = 7;
 let viewsSource = "posts";
-let accountRange = 30;
+let accountRange = 7;
 let postSort = "views";
 let chartsByTab = {};
 let accountMetrics = ["reach", "total_interactions", "profile_views"];
@@ -587,10 +587,10 @@ let shortsSort = "views";
 let selectedShortId = null;
 let activePlatform = "instagram";
 let activeYtTab = "summary";
-let diffState = { days: 7, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video", metric: "views" };
-let ozetRange = 30;
-let ytRange = 30;
-let ytDiffState = { days: 3, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, metric: "views" };
+let diffState = { days: 1, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, type: "video", metric: "views" };
+let ozetRange = 1;
+let ytRange = 7;
+let ytDiffState = { days: 1, dateFrom: null, dateTo: null, limit: 25, curveCount: 5, minDiff: null, maxDiff: null, metric: "views" };
 const PAGE_SIZE = 20;
 
 const YT_SORT_LABELS = {
@@ -821,6 +821,7 @@ function renderPane(tab) {
 
 function renderSummary() {
   const p = DATA.profile || {};
+  const dailyFollowerDelta = computeDailyDeltaSeries(DATA.follower_timeseries || [], followerRange);
   const dailyViewsBySource = DATA.daily_views_timeseries || {};
   const viewsSourceLabel = viewsSource === "stories" ? "Story" : viewsSource === "all" ? "Hepsi" : "Post + Reels";
   const dailyViews = [...(dailyViewsBySource[viewsSource] || [])]
@@ -830,8 +831,9 @@ function renderSummary() {
     .sort((a, b) => (b.latest.views || 0) - (a.latest.views || 0))
     .slice(0, 5);
   const dailyViewsFiltered = dailyViews
-    .slice(Math.max(0, dailyViews.length - viewsRange))
+    .slice(Math.max(0, dailyViews.length - followerRange))
     .map(x => ({ ...x, _t: new Date(`${x.d}T00:00:00`) }));
+  const totalFollowerDelta = dailyFollowerDelta.reduce((sum, row) => sum + (row.v || 0), 0);
   const totalViewsInRange = dailyViewsFiltered.reduce((sum, row) => sum + (row.v || 0), 0);
   const peakViewsDay = dailyViewsFiltered.reduce((best, row) => (row.v || 0) > (best.v || 0) ? row : best, dailyViewsFiltered[0] || { v: 0, d: null });
 
@@ -848,6 +850,7 @@ function renderSummary() {
     <div class="card">
       <h3>Takipçi Trendi</h3>
       <div class="range-sel">
+        <button class="${followerRange===1?'active':''}" onclick="setFollowerRange(1)">1g</button>
         <button class="${followerRange===3?'active':''}" onclick="setFollowerRange(3)">3g</button>
         <button class="${followerRange===7?'active':''}" onclick="setFollowerRange(7)">7g</button>
         <button class="${followerRange===30?'active':''}" onclick="setFollowerRange(30)">30g</button>
@@ -856,6 +859,14 @@ function renderSummary() {
       </div>
       <div class="chart-wrap"><canvas id="chart-follower"></canvas></div>
     </div>
+    ${dailyFollowerDelta.length ? `
+    <div class="card">
+      <h3>Günlük Takipçi</h3>
+      <div class="kpi-grid" style="margin-bottom:10px">
+        <div class="kpi"><div class="kpi-label">Son ${followerRange} gün net</div><div class="kpi-value">${fmtNum(totalFollowerDelta)}</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-daily-followers"></canvas></div>
+    </div>` : ""}
     <div class="card">
       <h3>Günlük İzlenme</h3>
       <div class="metric-toggle" style="margin-bottom:8px">
@@ -863,14 +874,8 @@ function renderSummary() {
         <button class="metric-btn ${viewsSource==='stories'?'active':''}" onclick="setViewsSource('stories')">Story</button>
         <button class="metric-btn ${viewsSource==='all'?'active':''}" onclick="setViewsSource('all')">Hepsi</button>
       </div>
-      <div class="range-sel">
-        <button class="${viewsRange===3?'active':''}" onclick="setViewsRange(3)">3g</button>
-        <button class="${viewsRange===7?'active':''}" onclick="setViewsRange(7)">7g</button>
-        <button class="${viewsRange===14?'active':''}" onclick="setViewsRange(14)">14g</button>
-        <button class="${viewsRange===30?'active':''}" onclick="setViewsRange(30)">30g</button>
-      </div>
       <div class="kpi-grid" style="margin-bottom:10px">
-        <div class="kpi"><div class="kpi-label">Son ${viewsRange} gün toplam</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div><div class="kpi-delta delta-flat">${viewsSourceLabel}</div></div>
+        <div class="kpi"><div class="kpi-label">Son ${followerRange} gün toplam</div><div class="kpi-value">${fmtNum(totalViewsInRange)}</div><div class="kpi-delta delta-flat">${viewsSourceLabel}</div></div>
         <div class="kpi"><div class="kpi-label">Günlük zirve</div><div class="kpi-value">${fmtNum(peakViewsDay.v)}</div><div class="kpi-delta delta-flat">${peakViewsDay.d ? fmtDate(peakViewsDay.d) : "—"}</div></div>
       </div>
       ${dailyViewsFiltered.length ? '<div class="chart-wrap"><canvas id="chart-daily-views"></canvas></div>' : '<div class="empty">Henüz günlük izlenme verisi yok.</div>'}
@@ -880,10 +885,11 @@ function renderSummary() {
       <div class="post-list">${topByViews.length ? topByViews.map(renderPostItem).join("") : '<div class="empty">Henüz post verisi yok.</div>'}</div>
     </div>`;
   drawFollowerChart();
+  if (dailyFollowerDelta.length) drawDailyDeltaBarChart("chart-daily-followers", dailyFollowerDelta, "Günlük Takipçi", "#833ab4", "Takipçi");
   if (dailyViewsFiltered.length) drawDailyViewsChart(dailyViewsFiltered);
 }
 
-function setFollowerRange(d) { followerRange = d; renderSummary(); }
+function setFollowerRange(d) { followerRange = d; viewsRange = d; renderSummary(); }
 function setOzetRange(d) { ozetRange = d; renderOzet(DATA && DATA.generated_at ? fmtDateTime(DATA.generated_at) : "—"); }
 
 function computeYtDailyViews(shorts, rangeDays) {
@@ -948,6 +954,28 @@ function computeDailyDeltaSeries(series, rangeDays) {
     deltas.push({ d: day, v: cur.value - prev.value });
   }
   return deltas.slice(Math.max(0, deltas.length - rangeDays));
+}
+function drawDailyDeltaBarChart(canvasId, series, datasetLabel, color, tooltipLabel) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  chartsByTab[canvasId] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: series.map(x => x.d),
+      datasets: [{ label: datasetLabel, data: series.map(x => x.v || 0), backgroundColor: color, borderRadius: 4, maxBarThickness: 28 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: {
+        title: items => fmtDate(items[0].label),
+        label: item => `${tooltipLabel}: ${fmtNum(item.parsed.y)}`
+      } } },
+      scales: {
+        x: { ticks: { maxRotation: 0, maxTicksLimit: 8, font: { size: 10 }, callback: (_, i) => { const d = new Date(series[i].d + "T00:00:00"); return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "short" }); } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
 }
 function setViewsRange(d) { viewsRange = d; renderSummary(); }
 function setViewsSource(source) { viewsSource = source; renderSummary(); }
@@ -1373,6 +1401,7 @@ function renderAccount() {
     <div class="card">
       <h3>Hesap Performansı</h3>
       <div class="range-sel">
+        <button class="${accountRange===1?'active':''}" onclick="setAccountRange(1)">1g</button>
         <button class="${accountRange===30?'active':''}" onclick="setAccountRange(30)">30g</button>
         <button class="${accountRange===90?'active':''}" onclick="setAccountRange(90)">90g</button>
         <button class="${accountRange===365?'active':''}" onclick="setAccountRange(365)">1y</button>
@@ -1904,9 +1933,11 @@ function renderYtSummary() {
   const ch = yt.channel || {};
   const shorts = yt.shorts || [];
   const subSeries = yt.subscriber_timeseries || [];
+  const dailySubscriberDelta = computeDailyDeltaSeries(subSeries, ytRange);
   const dailyViews = computeYtDailyViews(shorts, ytRange);
   const totalViewsInRange = dailyViews.reduce((sum, row) => sum + (row.v || 0), 0);
   const totalShortViews = shorts.reduce((sum, s) => sum + ytLatestNumber(s, "views"), 0);
+  const totalSubscriberDelta = dailySubscriberDelta.reduce((sum, row) => sum + (row.v || 0), 0);
   const subChange = subscriberDelta(subSeries, ytRange);
   const topShorts = [...shorts]
     .filter(s => s.latest && s.latest.views != null)
@@ -1936,6 +1967,14 @@ function renderYtSummary() {
       <h3>Abone Trendi</h3>
       <div class="chart-wrap"><canvas id="chart-yt-summary-subs"></canvas></div>
     </div>` : ""}
+    ${dailySubscriberDelta.length ? `
+    <div class="card">
+      <h3>Günlük Abone</h3>
+      <div class="kpi-grid" style="margin-bottom:10px">
+        <div class="kpi"><div class="kpi-label">Son ${ytRange} gün net</div><div class="kpi-value">${fmtNum(totalSubscriberDelta)}</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-yt-summary-dailysubs"></canvas></div>
+    </div>` : ""}
     ${dailyViews.length ? `
     <div class="card">
       <h3>Günlük İzlenme</h3>
@@ -1948,6 +1987,7 @@ function renderYtSummary() {
 
   setTimeout(() => {
     if (subSeries.length) drawYtSubscriberChart("chart-yt-summary-subs", subSeries, ytRange);
+    if (dailySubscriberDelta.length) drawDailyDeltaBarChart("chart-yt-summary-dailysubs", dailySubscriberDelta, "Günlük Abone", "#cc0000", "Abone");
     if (dailyViews.length) drawYtDailyViewsChart("chart-yt-summary-views", dailyViews, "Günlük İzlenme");
   }, 50);
 }
@@ -2265,6 +2305,7 @@ function renderYtHesap() {
       <h3>Kanal İstatistikleri</h3>
       <div class="range-sel">
         <button class="${ytRange===1?'active':''}" onclick="setYtRange(1)">1g</button>
+        <button class="${ytRange===3?'active':''}" onclick="setYtRange(3)">3g</button>
         <button class="${ytRange===7?'active':''}" onclick="setYtRange(7)">7g</button>
         <button class="${ytRange===30?'active':''}" onclick="setYtRange(30)">30g</button>
         <button class="${ytRange===90?'active':''}" onclick="setYtRange(90)">90g</button>
