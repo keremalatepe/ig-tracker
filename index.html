@@ -1150,6 +1150,80 @@ function renderPosts(reelsOnly) {
     </div>`;
 }
 
+const WEEKDAY_NAMES = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"];
+const OUTLIER_VIEWS_THRESHOLD = 500000;
+
+function computeWeekdayViewsStats(allPosts) {
+  const reels = allPosts.filter(p => p.type === "VIDEO" || p.product_type === "REELS");
+  const dayBuckets = [[], [], [], [], [], [], []];
+  for (const p of reels) {
+    const views = p.latest && p.latest.views != null ? Number(p.latest.views) : null;
+    if (!Number.isFinite(views) || views <= 0) continue;
+    if (views >= OUTLIER_VIEWS_THRESHOLD) continue;
+    if (!p.posted_at) continue;
+    const dt = parseDate(p.posted_at);
+    if (isNaN(dt.getTime())) continue;
+    const wd = (dt.getDay() + 6) % 7;
+    dayBuckets[wd].push(views);
+  }
+  return dayBuckets.map((bucket, i) => ({
+    day: WEEKDAY_NAMES[i],
+    count: bucket.length,
+    avg: bucket.length ? Math.round(bucket.reduce((s, v) => s + v, 0) / bucket.length) : 0,
+  }));
+}
+
+function renderWeekdayViewsCard(allPosts) {
+  const stats = computeWeekdayViewsStats(allPosts);
+  const total = stats.reduce((s, d) => s + d.count, 0);
+  if (!total) return "";
+  const best = stats.reduce((b, d) => d.avg > b.avg ? d : b, stats[0]);
+  return `
+    <div class="card">
+      <h3>Haftanın Günlerine Göre Ortalama İzlenme</h3>
+      <div class="kpi-grid" style="margin-bottom:10px">
+        <div class="kpi"><div class="kpi-label">En iyi gün</div><div class="kpi-value">${esc(best.day)}</div><div class="kpi-delta delta-flat">${fmtNum(best.avg)} ort.</div></div>
+        <div class="kpi"><div class="kpi-label">Analiz edilen</div><div class="kpi-value">${fmtNum(total)}</div><div class="kpi-delta delta-flat">video (outlier hariç)</div></div>
+      </div>
+      <div class="chart-wrap"><canvas id="chart-weekday-views"></canvas></div>
+    </div>`;
+}
+
+function drawWeekdayViewsChart(canvasId, allPosts) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  const stats = computeWeekdayViewsStats(allPosts);
+  const maxAvg = Math.max(...stats.map(d => d.avg));
+  chartsByTab[canvasId] = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: stats.map(d => d.day),
+      datasets: [{
+        label: "Ortalama İzlenme",
+        data: stats.map(d => d.avg),
+        backgroundColor: stats.map(d => d.avg === maxAvg ? "#168a5b" : "#2563eb"),
+        borderRadius: 5,
+        maxBarThickness: 48,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: {
+          title: items => stats[items[0].dataIndex].day,
+          label: item => [`Ort. izlenme: ${fmtNum(item.parsed.y)}`, `Video sayısı: ${stats[item.dataIndex].count}`],
+        } }
+      },
+      scales: {
+        x: { ticks: { font: { size: 11 } } },
+        y: { ticks: { font: { size: 10 }, callback: v => fmtShort(v) } }
+      }
+    }
+  });
+}
+
 function setSort(k) {
   postSort = k;
   if (activeTab === "posts" || activeTab === "reels") setPageState(activeTab, 1);
@@ -1415,8 +1489,10 @@ function renderAccount() {
     <div class="card">
       <h3>Takipçi Online Saatleri</h3>
       ${heatmap.length === 0 ? '<div class="empty" style="padding:20px">Henüz online_followers verisi yok.</div>' : renderHeatmap(heatmap)}
-    </div>`;
+    </div>
+    ${renderWeekdayViewsCard(DATA.posts || [])}`;
   if (series.length) drawAccountChart();
+  drawWeekdayViewsChart("chart-weekday-views", DATA.posts || []);
 }
 
 function setAccountRange(d) { accountRange = d; renderAccount(); }
