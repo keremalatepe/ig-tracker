@@ -1137,9 +1137,7 @@ function renderPosts(reelsOnly) {
   const start = (safePage - 1) * PAGE_SIZE;
   const pageItems = posts.slice(start, start + PAGE_SIZE);
   const latestFetchedAt = getLatestFetchedAt(posts);
-  const weekdayHtml = reelsOnly ? renderWeekdayViewsCard(DATA.posts || []) : "";
   document.getElementById(paneId).innerHTML = `
-    ${weekdayHtml}
     <div class="card">
       <h3>${reelsOnly ? "Reels" : "Tüm İçerikler"} (${posts.length})</h3>
       <div class="list-meta">Son veri: ${latestFetchedAt ? fmtDateTime(latestFetchedAt) : "—"}</div>
@@ -1150,11 +1148,10 @@ function renderPosts(reelsOnly) {
       <div class="post-list">${posts.length ? pageItems.map(renderPostItem).join("") : '<div class="empty">Henüz veri yok.</div>'}</div>
       ${renderPager(tabKey, safePage, totalPages, posts.length)}
     </div>`;
-  if (reelsOnly) drawWeekdayViewsChart("chart-weekday-views", DATA.posts || []);
 }
 
 const WEEKDAY_NAMES = ["Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar"];
-const OUTLIER_VIEWS_THRESHOLD = 2500000;
+const OUTLIER_VIEWS_THRESHOLD = 500000;
 
 function computeWeekdayViewsStats(allPosts) {
   const reels = allPosts.filter(p => p.type === "VIDEO" || p.product_type === "REELS");
@@ -1492,8 +1489,10 @@ function renderAccount() {
     <div class="card">
       <h3>Takipçi Online Saatleri</h3>
       ${heatmap.length === 0 ? '<div class="empty" style="padding:20px">Henüz online_followers verisi yok.</div>' : renderHeatmap(heatmap)}
-    </div>`;
+    </div>
+    ${renderWeekdayViewsCard(DATA.posts || [])}`;
   if (series.length) drawAccountChart();
+  drawWeekdayViewsChart("chart-weekday-views", DATA.posts || []);
 }
 
 function setAccountRange(d) { accountRange = d; renderAccount(); }
